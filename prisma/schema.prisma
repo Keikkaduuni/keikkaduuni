@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  password     String
+  name         String
+  companyName  String?
+  profilePhoto String?
+  description  String?
+  skills       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  palvelut     Palvelu[] // one-to-many relation
+  tarpeet      Tarve[]
+}
+
+model Palvelu {
+  id          Int     @id @default(autoincrement())
+  title       String
+  description String
+  contact     String
+  userId      String
+  user        User    @relation(fields: [userId], references: [id])
+}
+
+model Tarve {
+  id          Int     @id @default(autoincrement())
+  title       String
+  description String
+  contact     String
+  userId      String
+  user        User    @relation(fields: [userId], references: [id])
+}

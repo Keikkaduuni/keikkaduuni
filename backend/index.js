@@ -1,0 +1,211 @@
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import bodyParser from 'body-parser';
+
+import prisma from '../src/lib/prisma.js'; // Adjust if needed
+import authRoutes from './routes/auth.js';
+import { authenticateToken } from './middleware/auth.js';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 5001;
+
+// Middleware
+app.use(cors({
+  origin: 'http://localhost:5173',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}));
+app.options('*', cors());
+
+app.use(bodyParser.json());
+app.use(express.json());
+
+// ======= HELPERS =======
+const validateEntry = ({ title, description, contact }) =>
+  title?.trim() && description?.trim() && contact?.trim();
+
+// ======= ROUTERS =======
+
+// --- Mock Listings Router ---
+const listingsRouter = express.Router();
+
+const listings = [
+  { id: 1, type: 'PALVELUT', title: 'Service 1', description: 'Description of service 1' },
+  { id: 2, type: 'PALVELUT', title: 'Service 2', description: 'Description of service 2' },
+  { id: 3, type: 'PRODUCT', title: 'Product 1', description: 'Description of product 1' },
+];
+
+let nextListingId = listings.length + 1;
+
+listingsRouter.get('/', (req, res) => {
+  const { type } = req.query;
+  if (!type) return res.json(listings);
+
+  const filtered = listings.filter(item => item.type === type);
+  res.json(filtered);
+});
+
+listingsRouter.post('/', (req, res) => {
+  const { title, type, category, location, description } = req.body;
+
+  if (!title || !type || !category || !location) {
+    return res.status(400).json({ message: 'Missing required fields' });
+  }
+
+  const newListing = {
+    id: nextListingId++,
+    title,
+    type,
+    category,
+    location,
+    description: description || '',
+    createdAt: new Date().toISOString(),
+  };
+
+  listings.push(newListing);
+  res.status(201).json(newListing);
+});
+
+app.use('/listings', listingsRouter);
+
+// --- Palvelut Router ---
+const palvelutRouter = express.Router();
+
+palvelutRouter.get('/', async (req, res) => {
+  try {
+    const palvelut = await prisma.palvelu.findMany();
+    res.json(palvelut);
+  } catch (error) {
+    console.error('Error fetching palvelut:', error);
+    res.status(500).json({ error: 'Failed to fetch palvelut' });
+  }
+});
+
+palvelutRouter.post('/', authenticateToken, async (req, res) => {
+  if (!validateEntry(req.body)) {
+    return res.status(400).json({ error: 'Title, description and contact are required.' });
+  }
+
+  try {
+    const { title, description, contact } = req.body;
+    const newPalvelu = await prisma.palvelu.create({ data: { title, description, contact } });
+    res.status(201).json(newPalvelu);
+  } catch (error) {
+    console.error('Error creating palvelu:', error);
+    res.status(500).json({ error: 'Failed to create palvelu' });
+  }
+});
+
+palvelutRouter.put('/:id', async (req, res) => {
+  if (!validateEntry(req.body)) {
+    return res.status(400).json({ error: 'Title, description and contact are required.' });
+  }
+
+  try {
+    const { id } = req.params;
+    const { title, description, contact } = req.body;
+
+    const updatedPalvelu = await prisma.palvelu.update({
+      where: { id: Number(id) },
+      data: { title, description, contact },
+    });
+
+    res.json(updatedPalvelu);
+  } catch (error) {
+    console.error('Error updating palvelu:', error);
+    res.status(500).json({ error: 'Failed to update palvelu' });
+  }
+});
+
+palvelutRouter.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.palvelu.delete({ where: { id: Number(id) } });
+    res.json({ message: 'Palvelu deleted' });
+  } catch (error) {
+    console.error('Error deleting palvelu:', error);
+    res.status(500).json({ error: 'Failed to delete palvelu' });
+  }
+});
+
+app.use('/palvelut', palvelutRouter);
+
+// --- Tarpeet Router ---
+const tarpeetRouter = express.Router();
+
+tarpeetRouter.get('/', async (req, res) => {
+  try {
+    const tarpeet = await prisma.tarve.findMany();
+    res.json(tarpeet);
+  } catch (error) {
+    console.error('Error fetching tarpeet:', error);
+    res.status(500).json({ error: 'Failed to fetch tarpeet' });
+  }
+});
+
+tarpeetRouter.post('/', async (req, res) => {
+  if (!validateEntry(req.body)) {
+    return res.status(400).json({ error: 'Title, description and contact are required.' });
+  }
+
+  try {
+    const { title, description, contact } = req.body;
+    const newTarve = await prisma.tarve.create({ data: { title, description, contact } });
+    res.status(201).json(newTarve);
+  } catch (error) {
+    console.error('Error creating tarve:', error);
+    res.status(500).json({ error: 'Failed to create tarve' });
+  }
+});
+
+tarpeetRouter.put('/:id', async (req, res) => {
+  if (!validateEntry(req.body)) {
+    return res.status(400).json({ error: 'Title, description and contact are required.' });
+  }
+
+  try {
+    const { id } = req.params;
+    const { title, description, contact } = req.body;
+
+    const updatedTarve = await prisma.tarve.update({
+      where: { id: Number(id) },
+      data: { title, description, contact },
+    });
+
+    res.json(updatedTarve);
+  } catch (error) {
+    console.error('Error updating tarve:', error);
+    res.status(500).json({ error: 'Failed to update tarve' });
+  }
+});
+
+tarpeetRouter.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.tarve.delete({ where: { id: Number(id) } });
+    res.json({ message: 'Tarve deleted' });
+  } catch (error) {
+    console.error('Error deleting tarve:', error);
+    res.status(500).json({ error: 'Failed to delete tarve' });
+  }
+});
+
+app.use('/tarpeet', tarpeetRouter);
+
+// --- Auth Routes ---
+app.use('/api/auth', authRoutes);
+
+// ======= BASE ROUTE =======
+app.get('/', (req, res) => {
+  res.send('Backend server is up and running');
+});
+
+// ======= START SERVER =======
+app.listen(PORT, () => {
+  console.log(`Backend running on http://localhost:${PORT}`);
+});
+

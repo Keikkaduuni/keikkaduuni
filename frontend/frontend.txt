@@ -1,0 +1,41 @@
+async function handleSubmit(e: React.FormEvent) {
+  e.preventDefault();
+
+  const newListing = {
+    title,
+    description,
+    contact: phone, // your backend expects "contact"
+    
+ };
+
+  // Use type from form state directly
+  const endpoint = type === 'tarpeet' ? 'tarpeet' : 'palvelut';
+
+  try {
+    const response = await fetch(`http://localhost:5001/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newListing),
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      alert('Error: ' + err.error);
+      return;
+    }
+
+    const created = await response.json();
+
+    // Update listings state here to include the new one
+    setListings(prev => [created, ...prev]);
+
+    // Clear form fields
+    clearForm();
+
+    // Close modal
+    closeModal();
+
+  } catch (err) {
+    alert('Network or server error: ' + err);
+  }
+}

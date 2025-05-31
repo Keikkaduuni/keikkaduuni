@@ -8,7 +8,7 @@ interface User {
   name?: string;
   email?: string;
   description?: string;
-  skills?: string[];
+  skills?: string[]; // always array here
   profilePhoto?: string;
   palvelut?: { id: string; title: string; description: string }[];
   tarpeet?: { id: string; title: string; description: string }[];
@@ -16,12 +16,15 @@ interface User {
 }
 
 const Profiili: React.FC = () => {
-  const { user, setUser } = useContext(AuthContext) as {
+  const { user, fetchUser } = useContext(AuthContext) as {
     user: User | null;
     setUser: React.Dispatch<React.SetStateAction<User | null>>;
+    fetchUser: () => Promise<void>;
   };
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [photoError, setPhotoError] = useState(false);
+  const photoUrlRef = useRef<string | null>(null);
 
   const [profileData, setProfileData] = useState({
     name: '',
@@ -31,17 +34,25 @@ const Profiili: React.FC = () => {
     profilePhoto: '',
   });
 
-  const photoUrlRef = useRef<string | null>(null);
+  // Sync state from context
+  const syncProfileFromUser = (user: User) => {
+    setPhotoError(false);
+    setProfileData({
+      name: user.name || '',
+      email: user.email || '',
+      description: user.description?.trim() || '',
+      skills: Array.isArray(user.skills)
+        ? user.skills
+        : typeof user.skills === 'string'
+        ? user.skills.split(',').map((s) => s.trim()).filter(Boolean)
+        : [],
+      profilePhoto: user.profilePhoto || '',
+    });
+  };
 
   useEffect(() => {
     if (user) {
-      setProfileData({
-        name: user.name || '',
-        email: user.email || '',
-        description: user.description || '',
-        skills: user.skills || [],
-        profilePhoto: user.profilePhoto || '',
-      });
+      syncProfileFromUser(user);
     }
   }, [user]);
 
@@ -60,76 +71,49 @@ const Profiili: React.FC = () => {
     description?: string;
     skills: string[];
     profilePhotoFile?: File | null;
+    removePhoto?: boolean;
   }) => {
     try {
       const formData = new FormData();
       formData.append('name', updatedData.name);
       formData.append('email', updatedData.email);
       formData.append('description', updatedData.description || '');
-      formData.append('skills', JSON.stringify(updatedData.skills));
+      formData.append('skills', JSON.stringify(updatedData.skills || []));
 
       if (updatedData.profilePhotoFile) {
         formData.append('profilePhoto', updatedData.profilePhotoFile);
       }
 
-      const token = localStorage.getItem('token');
+      if (updatedData.removePhoto) {
+        formData.append('removePhoto', 'true');
+      }
 
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const response = await fetch('http://localhost:5001/api/profile', {
         method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error('Profiilin päivitys epäonnistui');
-      }
+      if (!response.ok) throw new Error('Profiilin päivitys epäonnistui');
 
-      const updatedUser = await response.json();
-
-      let newPhotoUrl = profileData.profilePhoto;
-      if (updatedData.profilePhotoFile) {
-        if (photoUrlRef.current) {
-          URL.revokeObjectURL(photoUrlRef.current);
-        }
-        newPhotoUrl = URL.createObjectURL(updatedData.profilePhotoFile);
-        photoUrlRef.current = newPhotoUrl;
-      }
-
-      setProfileData({
-        name: updatedUser.name,
-        email: updatedUser.email,
-        description: updatedUser.description || '',
-        skills: updatedUser.skills || [],
-        profilePhoto: newPhotoUrl,
-      });
-
-      setUser({
-        ...user,
-        name: updatedUser.name,
-        email: updatedUser.email,
-        description: updatedUser.description || '',
-        skills: updatedUser.skills || [],
-        profilePhoto: newPhotoUrl,
-        palvelut: updatedUser.palvelut || user.palvelut || [],
-        tarpeet: updatedUser.tarpeet || user.tarpeet || [],
-        savedServices: updatedUser.savedServices || user.savedServices || [],
-      });
-
-
+      await fetchUser(); // refresh context from DB
       setModalOpen(false);
+      setPhotoError(false);
     } catch (error) {
-      console.error(error);
+      console.error('Profiilin päivitysvirhe:', error);
       alert('Profiilin päivittäminen epäonnistui. Yritä uudelleen.');
     }
   };
 
-  if (!user) {
-    return <p>Ladataan profiilia...</p>;
-  }
+  if (!user) return <p>Ladataan profiilia...</p>;
 
-  const { palvelut, tarpeet, savedServices } = user;
+  const resolvedPhoto =
+    !photoError && profileData.profilePhoto
+      ? profileData.profilePhoto.startsWith('http')
+        ? profileData.profilePhoto
+        : `http://localhost:5001${profileData.profilePhoto}`
+      : 'https://www.svgrepo.com/show/501943/user.svg';
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -156,14 +140,9 @@ const Profiili: React.FC = () => {
         >
           <div className="flex flex-col items-center">
             <img
-              src={
-                profileData.profilePhoto
-                  ? profileData.profilePhoto.startsWith('http')
-                    ? profileData.profilePhoto
-                    : `http://localhost:5001${profileData.profilePhoto}`
-                  : '/default-profile.png'
-              }
+              src={resolvedPhoto}
               alt="Profiilikuva"
+              onError={() => setPhotoError(true)}
               className="w-40 h-40 rounded-full object-cover border-4 border-white/20 shadow-lg"
             />
           </div>
@@ -179,12 +158,14 @@ const Profiili: React.FC = () => {
             </div>
             <div>
               <h2 className="text-xl font-semibold">Kuvaus</h2>
-              <p className="whitespace-pre-wrap">{profileData.description || 'Ei kuvausta'}</p>
+              <p className="whitespace-pre-wrap">
+                {profileData.description || 'Ei kuvausta'}
+              </p>
             </div>
             <div>
               <h2 className="text-xl font-semibold mb-2">Taidot</h2>
               <div className="flex flex-wrap gap-2">
-                {profileData.skills?.length ? (
+                {profileData.skills.length > 0 ? (
                   profileData.skills.map((skill, idx) => (
                     <span
                       key={idx}
@@ -201,97 +182,6 @@ const Profiili: React.FC = () => {
           </div>
         </motion.section>
       </AnimatePresence>
-
-      {/* Palveluni */}
-      <motion.section
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2, duration: 0.5 }}
-        className="mb-12"
-      >
-        <h2 className="text-2xl font-bold uppercase mb-4 border-b border-white/20 pb-2">Palveluni</h2>
-        {palvelut?.length ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {palvelut.map((service) => (
-              <div
-                key={service.id}
-                className="bg-white/10 p-4 rounded shadow hover:bg-white/20 transition"
-              >
-                <h3 className="font-semibold text-lg">{service.title}</h3>
-                <p className="text-sm mt-1">{service.description}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p>Ei palveluita lisättynä</p>
-        )}
-      </motion.section>
-
-      {/* Tarpeeni */}
-      <motion.section
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4, duration: 0.5 }}
-        className="mb-12"
-      >
-        <h2 className="text-2xl font-bold uppercase mb-4 border-b border-white/20 pb-2">Tarpeeni</h2>
-        {tarpeet?.length ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {tarpeet.map((need) => (
-              <div
-                key={need.id}
-                className="bg-white/10 p-4 rounded shadow hover:bg-white/20 transition"
-              >
-                <h3 className="font-semibold text-lg">{need.title}</h3>
-                <p className="text-sm mt-1">{need.description}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p>Ei tarpeita lisättynä</p>
-        )}
-      </motion.section>
-
-      {/* Tallennetut palvelut */}
-      <motion.section
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6, duration: 0.5 }}
-        className="mb-12"
-      >
-        <h2 className="text-2xl font-bold uppercase mb-4 border-b border-white/20 pb-2">Tallennetut palvelut</h2>
-        {savedServices?.length ? (
-          <div className="flex overflow-x-auto gap-4 scrollbar-thin scrollbar-thumb-white/30 scrollbar-track-transparent">
-            {savedServices.map((saved) => (
-              <div
-                key={saved.id}
-                className="min-w-[250px] bg-white/10 p-4 rounded shadow hover:bg-white/20 transition flex-shrink-0"
-              >
-                <h3 className="font-semibold text-lg">{saved.title}</h3>
-                <p className="text-sm mt-1">{saved.description}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p>Ei tallennettuja palveluita</p>
-        )}
-      </motion.section>
-
-      {/* Support Picture */}
-      <motion.section
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.8, duration: 0.5 }}
-      >
-        <h2 className="text-2xl font-bold uppercase mb-4 border-b border-white/20 pb-2">Tuki</h2>
-        <div className="flex justify-center">
-          <img
-            src="/support-picture.png"
-            alt="Tuki kuvitus"
-            className="max-w-xs rounded shadow-lg"
-          />
-        </div>
-      </motion.section>
 
       {modalOpen && (
         <Modal

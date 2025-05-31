@@ -4,8 +4,8 @@ import dotenv from 'dotenv';
 import bodyParser from 'body-parser';
 import multer from 'multer';
 import path from 'path';
-
-import prisma from '../src/lib/prisma.js'; // adjust path if needed
+import fs from 'fs';
+import prisma from '../src/lib/prisma.js';
 import authRoutes from './routes/auth.js';
 import { authenticateToken } from './middleware/auth.js';
 
@@ -14,49 +14,40 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-// ================== Multer Config ==================
+// ------------------ Multer Config ------------------
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/');
-  },
-  filename: function (req, file, cb) {
+  destination: (req, file, cb) => cb(null, 'uploads/'),
+  filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    cb(null, `profilePhoto-${unique}${ext}`);
   },
 });
 const upload = multer({ storage });
 
-// ================== Middleware ==================
+// ------------------ Middleware ------------------
 app.use(
   cors({
     origin: 'http://localhost:5173',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
-  }),
+  })
 );
 app.options('*', cors());
-
 app.use(bodyParser.json());
 app.use(express.json());
-app.use('/uploads', express.static('uploads')); // Serve uploaded files
+app.use('/uploads', express.static('uploads'));
 
-// ================== Helpers ==================
-const skillsToString = (skillsArray) => skillsArray?.join(',') || '';
-const skillsToArray = (skillsString) =>
-  skillsString ? skillsString.split(',').map((s) => s.trim()) : [];
-
+// ------------------ Helper Functions ------------------
 const validateEntry = ({ title, description, contact }) =>
   title?.trim() && description?.trim() && contact?.trim();
 
-// ================== Listings Router ==================
+// ------------------ Listings Router ------------------
 const listingsRouter = express.Router();
-
 const listings = [
   { id: 1, type: 'PALVELUT', title: 'Service 1', description: 'Description of service 1' },
   { id: 2, type: 'PALVELUT', title: 'Service 2', description: 'Description of service 2' },
-  { id: 3, type: 'PRODUCT', title: 'Product 1', description: 'Description of product 1' },
 ];
 let nextListingId = listings.length + 1;
 
@@ -86,15 +77,14 @@ listingsRouter.post('/', (req, res) => {
 
 app.use('/listings', listingsRouter);
 
-// ================== Palvelut Router ==================
+// ------------------ Palvelut Routes ------------------
 const palvelutRouter = express.Router();
 
 palvelutRouter.get('/', async (req, res) => {
   try {
     const palvelut = await prisma.palvelu.findMany();
     res.json(palvelut);
-  } catch (error) {
-    console.error('Error fetching palvelut:', error);
+  } catch (err) {
     res.status(500).json({ error: 'Failed to fetch palvelut' });
   }
 });
@@ -107,8 +97,7 @@ palvelutRouter.post('/', authenticateToken, async (req, res) => {
     const { title, description, contact } = req.body;
     const newPalvelu = await prisma.palvelu.create({ data: { title, description, contact } });
     res.status(201).json(newPalvelu);
-  } catch (error) {
-    console.error('Error creating palvelu:', error);
+  } catch {
     res.status(500).json({ error: 'Failed to create palvelu' });
   }
 });
@@ -125,8 +114,7 @@ palvelutRouter.put('/:id', async (req, res) => {
       data: { title, description, contact },
     });
     res.json(updatedPalvelu);
-  } catch (error) {
-    console.error('Error updating palvelu:', error);
+  } catch {
     res.status(500).json({ error: 'Failed to update palvelu' });
   }
 });
@@ -136,23 +124,21 @@ palvelutRouter.delete('/:id', async (req, res) => {
     const { id } = req.params;
     await prisma.palvelu.delete({ where: { id: Number(id) } });
     res.json({ message: 'Palvelu deleted' });
-  } catch (error) {
-    console.error('Error deleting palvelu:', error);
+  } catch {
     res.status(500).json({ error: 'Failed to delete palvelu' });
   }
 });
 
 app.use('/palvelut', palvelutRouter);
 
-// ================== Tarpeet Router ==================
+// ------------------ Tarpeet Routes ------------------
 const tarpeetRouter = express.Router();
 
 tarpeetRouter.get('/', async (req, res) => {
   try {
     const tarpeet = await prisma.tarve.findMany();
     res.json(tarpeet);
-  } catch (error) {
-    console.error('Error fetching tarpeet:', error);
+  } catch {
     res.status(500).json({ error: 'Failed to fetch tarpeet' });
   }
 });
@@ -165,8 +151,7 @@ tarpeetRouter.post('/', async (req, res) => {
     const { title, description, contact } = req.body;
     const newTarve = await prisma.tarve.create({ data: { title, description, contact } });
     res.status(201).json(newTarve);
-  } catch (error) {
-    console.error('Error creating tarve:', error);
+  } catch {
     res.status(500).json({ error: 'Failed to create tarve' });
   }
 });
@@ -183,8 +168,7 @@ tarpeetRouter.put('/:id', async (req, res) => {
       data: { title, description, contact },
     });
     res.json(updatedTarve);
-  } catch (error) {
-    console.error('Error updating tarve:', error);
+  } catch {
     res.status(500).json({ error: 'Failed to update tarve' });
   }
 });
@@ -194,42 +178,59 @@ tarpeetRouter.delete('/:id', async (req, res) => {
     const { id } = req.params;
     await prisma.tarve.delete({ where: { id: Number(id) } });
     res.json({ message: 'Tarve deleted' });
-  } catch (error) {
-    console.error('Error deleting tarve:', error);
+  } catch {
     res.status(500).json({ error: 'Failed to delete tarve' });
   }
 });
 
 app.use('/tarpeet', tarpeetRouter);
 
-// ================== Auth Routes ==================
+// ------------------ Auth Routes ------------------
 app.use('/api/auth', authRoutes);
 
-// ================== Profile Update ==================
+// ------------------ Update Profile Route ------------------
 app.put('/api/profile', authenticateToken, upload.single('profilePhoto'), async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { name, description, skills } = req.body;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    // Parse skills safely - either array or CSV string
-    let parsedSkills = [];
-    if (skills) {
-      try {
-        parsedSkills = Array.isArray(skills) ? skills : JSON.parse(skills);
-      } catch {
-        parsedSkills = skills.split(',').map(s => s.trim());
-      }
+    const { name = '', description = '', skills = '', removePhoto } = req.body;
+
+    if (!name.trim()) {
+      return res.status(400).json({ error: 'Name is required' });
     }
 
-    // Build update object only with provided fields
-    const updateData = {};
-    if (name) updateData.name = name;
-    if (description) updateData.description = description;
-    if (parsedSkills.length > 0) updateData.skills = parsedSkills.join(',');
-    if (req.file) updateData.profilePhoto = `/uploads/${req.file.filename}`;
+    let parsedSkills = [];
+    try {
+      parsedSkills = Array.isArray(skills)
+        ? skills
+        : typeof skills === 'string'
+        ? JSON.parse(skills)
+        : [];
+    } catch {
+      parsedSkills = skills.split(',').map((s) => s.trim()).filter(Boolean);
+    }
 
-    if (Object.keys(updateData).length === 0) {
-      return res.status(400).json({ error: 'No valid fields to update' });
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const oldPhotoPath = user?.profilePhoto ? path.join('uploads', path.basename(user.profilePhoto)) : null;
+
+    const updateData = {
+      name: name.trim(),
+      description: description.trim(),
+      skills: parsedSkills.join(','),
+    };
+
+    if (req.file) {
+      // Delete old photo if it exists and being replaced
+      if (oldPhotoPath && fs.existsSync(oldPhotoPath)) {
+        fs.unlinkSync(oldPhotoPath);
+      }
+      updateData.profilePhoto = `/uploads/${req.file.filename}`;
+    } else if (removePhoto === 'true') {
+      if (oldPhotoPath && fs.existsSync(oldPhotoPath)) {
+        fs.unlinkSync(oldPhotoPath);
+      }
+      updateData.profilePhoto = null;
     }
 
     const updatedUser = await prisma.user.update({
@@ -238,7 +239,7 @@ app.put('/api/profile', authenticateToken, upload.single('profilePhoto'), async 
     });
 
     res.json({
-      message: 'Profile updated',
+      message: 'Profile updated successfully',
       user: {
         ...updatedUser,
         skills: updatedUser.skills ? updatedUser.skills.split(',') : [],
@@ -251,12 +252,10 @@ app.put('/api/profile', authenticateToken, upload.single('profilePhoto'), async 
 });
 
 
-// ================== Get Current User Profile ==================
-// Example GET /api/profile route
+// ------------------ Get Profile Route ------------------
 app.get('/api/profile', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -265,23 +264,70 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
         name: true,
         companyName: true,
         profilePhoto: true,
-        description: true,  // Include these new fields here
+        description: true,
         skills: true,
         createdAt: true,
         updatedAt: true,
-      }
+      },
     });
 
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      ...user,
+      skills: user.skills ? user.skills.split(',') : [],
+    });
   } catch (error) {
-    console.error('Error fetching profile:', error);
+    console.error('Profile fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch profile' });
   }
 });
 
+// Add this route near the other profile-related ones
+app.get('/api/check-name', authenticateToken, async (req, res) => {
+  const { name, email } = req.query;
+  if (!name || !email) return res.status(400).json({ error: 'Missing name or email' });
 
-// ================== Base Routes ==================
+  try {
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        name: name.toString(),
+        email: { not: email.toString() },
+      },
+    });
+
+    return res.json({ taken: !!existingUser });
+  } catch (err) {
+    console.error('Name check error:', err);
+    return res.status(500).json({ error: 'Name check failed' });
+  }
+});
+
+app.get('/api/check-company', authenticateToken, async (req, res) => {
+  const { companyName, email } = req.query;
+  if (!companyName || !email) {
+    return res.status(400).json({ error: 'Missing company name or email' });
+  }
+
+  try {
+    const existing = await prisma.user.findFirst({
+      where: {
+        companyName: companyName.toString(),
+        email: { not: email.toString() },
+      },
+    });
+
+    return res.json({ taken: !!existing });
+  } catch (err) {
+    console.error('Company name check error:', err);
+    return res.status(500).json({ error: 'Company name check failed' });
+  }
+});
+
+
+// ------------------ Default Routes ------------------
 app.get('/', (req, res) => res.send('Backend server is up and running'));
 
 app.get('/routes', (req, res) => {
@@ -294,7 +340,7 @@ app.get('/routes', (req, res) => {
   ]);
 });
 
-// ================== Start Server ==================
+// ------------------ Start Server ------------------
 app.listen(PORT, () => {
   console.log(`Backend running at http://localhost:${PORT}`);
 });

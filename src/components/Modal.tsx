@@ -1,249 +1,303 @@
 import React, { useState, useEffect, useRef, ChangeEvent } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { Pencil, Trash2 } from 'lucide-react';
+import Cropper from 'react-easy-crop';
+import getCroppedImg from '../utils/cropImage';
 
 interface ModalProps {
   onClose: () => void;
   userData: {
     name: string;
     email: string;
+    companyName?: string;
     description?: string;
     skills?: string[];
     profilePhoto?: string;
   };
   onSave: (data: {
     name: string;
+    companyName?: string;
     email: string;
     description?: string;
     skills: string[];
     profilePhotoFile?: File | null;
+    removePhoto?: boolean;
   }) => void;
 }
 
 const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [description, setDescription] = useState('');
-  const [skillsInput, setSkillsInput] = useState('');
-  const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
-  const [previewPhoto, setPreviewPhoto] = useState('');
-  const [errors, setErrors] = useState<{ name?: string; email?: string }>({});
-  const [isSaving, setIsSaving] = useState(false);
+  const [name, setName] = useState(userData.name || '');
+  const [companyName, setCompanyName] = useState(userData.companyName || '');
+  const [description, setDescription] = useState(userData.description || '');
+  const [skills, setSkills] = useState((userData.skills || []).join(', '));
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState(userData.profilePhoto || '');
+  const [removePhoto, setRemovePhoto] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const objectUrlRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
 
-  // Reset modal state on open/userData change
+  const [cropping, setCropping] = useState(false);
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+
   useEffect(() => {
-    setName(userData.name || '');
-    setEmail(userData.email || '');
-    setDescription(userData.description || '');
-    setSkillsInput((userData.skills || []).join(', '));
-    setPreviewPhoto(userData.profilePhoto || '');
-    setProfilePhotoFile(null);
-    setErrors({});
-  }, [userData]);
+    if (photoFile) {
+      const objectUrl = URL.createObjectURL(photoFile);
+      previewUrlRef.current = objectUrl;
+      setPreview(objectUrl);
+      return () => {
+        if (previewUrlRef.current) {
+          URL.revokeObjectURL(previewUrlRef.current);
+          previewUrlRef.current = null;
+        }
+      };
+    }
+  }, [photoFile]);
 
-  // Clean up blob URLs
-  useEffect(() => {
-    return () => {
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current);
-      }
-    };
-  }, []);
-
-  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current);
-      }
-      const previewUrl = URL.createObjectURL(file);
-      objectUrlRef.current = previewUrl;
-      setProfilePhotoFile(file);
-      setPreviewPhoto(previewUrl);
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImageSrc(reader.result as string);
+        setCropping(true);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  const validate = () => {
-    const newErrors: { name?: string; email?: string } = {};
-    if (!name.trim()) newErrors.name = 'Nimi vaaditaan';
-    if (!email.trim()) newErrors.email = 'Sähköposti vaaditaan';
-    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = 'Sähköposti ei ole validi';
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const handleCropComplete = (_: any, croppedPixels: any) => {
+    setCroppedAreaPixels(croppedPixels);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
-
-    setIsSaving(true);
-
-    const skillsArray = skillsInput
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-
-    await onSave({
-      name,
-      email,
-      description,
-      skills: skillsArray,
-      profilePhotoFile,
-    });
-
-    setIsSaving(false);
-    onClose();
+  const handleCropSave = async () => {
+    if (!imageSrc || !croppedAreaPixels) return;
+    const croppedBlob = await getCroppedImg(imageSrc, croppedAreaPixels);
+    if (!croppedBlob) return;
+    const file = new File([croppedBlob], 'profile.jpg', { type: 'image/jpeg' });
+    const previewUrl = URL.createObjectURL(file);
+    previewUrlRef.current = previewUrl;
+    setPreview(previewUrl);
+    setPhotoFile(file);
+    setRemovePhoto(false);
+    setImageSrc(null);
+    setCropping(false);
   };
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      setError('Nimi vaaditaan');
+      return;
+    }
+
+    try {
+      const [nameRes, companyRes] = await Promise.all([
+        fetch(`http://localhost:5001/api/check-name?name=${encodeURIComponent(name.trim())}&email=${encodeURIComponent(userData.email)}`),
+        fetch(`http://localhost:5001/api/check-company?companyName=${encodeURIComponent(companyName.trim())}&email=${encodeURIComponent(userData.email)}`),
+      ]);
+
+      const nameData = await nameRes.json();
+      const companyData = await companyRes.json();
+
+      if (nameData.taken) {
+        setError('Tämä nimi on jo käytössä');
+        return;
+      }
+
+      if (companyData.taken) {
+        setError('Yrityksen nimi on jo käytössä');
+        return;
+      }
+
+      const cleanSkills = skills
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s !== '');
+
+      onSave({
+        name: name.trim(),
+        companyName: companyName.trim() || '',
+        email: userData.email,
+        description: description?.trim() || '',
+        skills: cleanSkills,
+        profilePhotoFile: removePhoto ? null : photoFile,
+        removePhoto,
+      });
+
+      setError(null);
+    } catch (err) {
+      console.error('Name/company check failed', err);
+      setError('Virhe tarkistuksessa');
+    }
+  };
+
+  const resolvedPreview =
+    removePhoto || !preview
+      ? 'https://www.svgrepo.com/show/501943/user.svg'
+      : preview.startsWith('http')
+      ? preview
+      : `http://localhost:5001${preview}`;
 
   return (
-    <AnimatePresence>
+    <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
       <motion.div
-        key="modal-overlay"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50"
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="bg-white text-black rounded-xl w-full max-w-xl p-6 space-y-4 relative"
       >
-        <motion.div
-          key="modal-content"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-profile-heading"
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.8, opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          onClick={(e) => e.stopPropagation()}
-          className="bg-gray-900 rounded-lg max-w-lg w-full p-6 relative"
-        >
-          {/* Close Button */}
+        {/* Profile Image */}
+        <div className="absolute -top-14 left-1/2 -translate-x-1/2 w-28 h-28 rounded-full border-4 border-white shadow-lg overflow-hidden relative group bg-gray-200">
+          <img
+            src={resolvedPreview}
+            alt="Profiilikuva"
+            className="w-full h-full object-cover"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition"
+          >
+            <div className="flex flex-col items-center text-white text-sm">
+              <Pencil className="w-4 h-4 mb-1" />
+              Muokkaa
+            </div>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+        </div>
+
+        {/* Remove Photo */}
+        {(preview || userData.profilePhoto) && !removePhoto && (
+          <div className="flex justify-center mt-2">
+            <button
+              onClick={() => {
+                setPhotoFile(null);
+                setPreview('');
+                setRemovePhoto(true);
+              }}
+              className="text-gray-600 text-sm flex items-center gap-1 hover:text-red-600 transition"
+            >
+              <Trash2 size={14} /> Poista profiilikuva
+            </button>
+          </div>
+        )}
+
+        {/* Title and Error */}
+        <h2 className="text-2xl font-bold text-center mt-16 mb-4">Muokkaa profiilia</h2>
+        {error && (
+          <p className="text-red-600 font-semibold text-sm text-center -mt-2">{error}</p>
+        )}
+
+        {/* Fields */}
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-semibold mb-1">Nimi</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setError(null);
+              }}
+              className="w-full border p-2 rounded"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-1">Yrityksen nimi</label>
+            <input
+              type="text"
+              value={companyName}
+              onChange={(e) => {
+                setCompanyName(e.target.value);
+                setError(null);
+              }}
+              className="w-full border p-2 rounded"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-1">Kuvaus</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full border p-2 rounded"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-1">Taidot (pilkuilla eroteltuna)</label>
+            <input
+              type="text"
+              value={skills}
+              onChange={(e) => setSkills(e.target.value)}
+              className="w-full border p-2 rounded"
+            />
+          </div>
+        </div>
+
+        {/* Buttons */}
+        <div className="flex justify-end gap-3 mt-6">
           <button
             onClick={onClose}
-            aria-label="Close modal"
-            className="absolute top-4 right-4 text-white hover:text-red-500 transition text-xl font-bold"
+            className="bg-gray-300 text-black px-4 py-2 rounded hover:bg-gray-400 transition"
           >
-            &times;
+            Peruuta
           </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700"
+          >
+            Tallenna
+          </button>
+        </div>
 
-          <h2 id="edit-profile-heading" className="text-2xl font-bold mb-6 text-white">
-            Muokkaa profiilia
-          </h2>
-
-          <form onSubmit={handleSubmit} className="space-y-4 text-white">
-            {/* Profile Photo Upload */}
-            <div className="flex flex-col items-center mb-4">
-              {previewPhoto ? (
-                <img
-                  src={previewPhoto}
-                  alt="Preview"
-                  className="w-28 h-28 rounded-full object-cover border-4 border-white/20 shadow-lg mb-2"
+        {/* Cropping Modal */}
+        {cropping && (
+          <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center">
+            <div className="relative w-[90vw] h-[80vh] bg-white rounded-xl overflow-hidden">
+              <div className="absolute inset-0 z-10">
+                <Cropper
+                  image={imageSrc!}
+                  crop={crop}
+                  zoom={zoom}
+                  aspect={1}
+                  cropShape="round"
+                  showGrid={false}
+                  onCropChange={setCrop}
+                  onCropComplete={handleCropComplete}
+                  onZoomChange={setZoom}
                 />
-              ) : (
-                <div className="w-28 h-28 rounded-full bg-white/10 flex items-center justify-center text-white mb-2">
-                  Ei kuvaa
-                </div>
-              )}
-              <label
-                htmlFor="photo-upload"
-                className="cursor-pointer px-4 py-2 bg-white text-black rounded uppercase font-semibold hover:bg-gray-200 transition select-none"
-              >
-                Vaihda kuva
-              </label>
-              <input
-                type="file"
-                id="photo-upload"
-                accept="image/*"
-                className="hidden"
-                onChange={handlePhotoChange}
-              />
+              </div>
+              <div className="absolute bottom-4 right-4 z-20 flex gap-3">
+                <button
+                  onClick={() => setCropping(false)}
+                  className="bg-gray-200 text-black px-4 py-2 rounded hover:bg-gray-300"
+                >
+                  Peruuta
+                </button>
+                <button
+                  onClick={handleCropSave}
+                  className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                >
+                  Käytä kuvaa
+                </button>
+              </div>
             </div>
-
-            {/* Name */}
-            <div>
-              <label htmlFor="name" className="block mb-1 font-semibold">
-                Nimi <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="name"
-                type="text"
-                className={`w-full rounded px-3 py-2 text-black ${
-                  errors.name ? 'border border-red-500' : ''
-                }`}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              {errors.name && <p className="text-red-500 text-sm mt-1">{errors.name}</p>}
-            </div>
-
-            {/* Email */}
-            <div>
-              <label htmlFor="email" className="block mb-1 font-semibold">
-                Sähköposti <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="email"
-                type="email"
-                className={`w-full rounded px-3 py-2 text-black ${
-                  errors.email ? 'border border-red-500' : ''
-                }`}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
-            </div>
-
-            {/* Description */}
-            <div>
-              <label htmlFor="description" className="block mb-1 font-semibold">
-                Kuvaus
-              </label>
-              <textarea
-                id="description"
-                rows={3}
-                className="w-full rounded px-3 py-2 text-black"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-
-            {/* Skills */}
-            <div>
-              <label htmlFor="skills" className="block mb-1 font-semibold">
-                Taidot (pilkulla eroteltuna)
-              </label>
-              <input
-                id="skills"
-                type="text"
-                className="w-full rounded px-3 py-2 text-black"
-                value={skillsInput}
-                onChange={(e) => setSkillsInput(e.target.value)}
-                placeholder="Esim. valokuvaus, graafinen suunnittelu"
-              />
-            </div>
-
-            {/* Buttons */}
-            <div className="flex justify-end gap-4 mt-6">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 bg-gray-700 rounded uppercase font-semibold hover:bg-gray-600 transition"
-              >
-                Peruuta
-              </button>
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-4 py-2 bg-white text-black rounded uppercase font-semibold hover:bg-gray-200 transition disabled:opacity-50"
-              >
-                {isSaving ? 'Tallennetaan...' : 'Tallenna'}
-              </button>
-            </div>
-          </form>
-        </motion.div>
+          </div>
+        )}
       </motion.div>
-    </AnimatePresence>
+    </div>
   );
 };
 

@@ -8,8 +8,9 @@ interface User {
   name?: string;
   email?: string;
   description?: string;
-  skills?: string[]; // always array here
+  skills?: string[];
   profilePhoto?: string;
+  companyName?: string;
   palvelut?: { id: string; title: string; description: string }[];
   tarpeet?: { id: string; title: string; description: string }[];
   savedServices?: { id: string; title: string; description: string }[];
@@ -29,17 +30,18 @@ const Profiili: React.FC = () => {
   const [profileData, setProfileData] = useState({
     name: '',
     email: '',
+    companyName: '',
     description: '',
     skills: [] as string[],
     profilePhoto: '',
   });
 
-  // Sync state from context
   const syncProfileFromUser = (user: User) => {
     setPhotoError(false);
     setProfileData({
       name: user.name || '',
       email: user.email || '',
+      companyName: user.companyName || '',
       description: user.description?.trim() || '',
       skills: Array.isArray(user.skills)
         ? user.skills
@@ -68,6 +70,7 @@ const Profiili: React.FC = () => {
   const handleSave = async (updatedData: {
     name: string;
     email: string;
+    companyName?: string;
     description?: string;
     skills: string[];
     profilePhotoFile?: File | null;
@@ -77,6 +80,7 @@ const Profiili: React.FC = () => {
       const formData = new FormData();
       formData.append('name', updatedData.name);
       formData.append('email', updatedData.email);
+      formData.append('companyName', updatedData.companyName || '');
       formData.append('description', updatedData.description || '');
       formData.append('skills', JSON.stringify(updatedData.skills || []));
 
@@ -97,7 +101,7 @@ const Profiili: React.FC = () => {
 
       if (!response.ok) throw new Error('Profiilin päivitys epäonnistui');
 
-      await fetchUser(); // refresh context from DB
+      await fetchUser();
       setModalOpen(false);
       setPhotoError(false);
     } catch (error) {
@@ -106,14 +110,14 @@ const Profiili: React.FC = () => {
     }
   };
 
-  if (!user) return <p>Ladataan profiilia...</p>;
-
   const resolvedPhoto =
     !photoError && profileData.profilePhoto
       ? profileData.profilePhoto.startsWith('http')
         ? profileData.profilePhoto
         : `http://localhost:5001${profileData.profilePhoto}`
-      : 'https://www.svgrepo.com/show/501943/user.svg';
+      : null;
+
+  if (!user) return <p>Ladataan profiilia...</p>;
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -139,12 +143,31 @@ const Profiili: React.FC = () => {
           className="flex flex-col md:flex-row gap-10 mb-12"
         >
           <div className="flex flex-col items-center">
-            <img
-              src={resolvedPhoto}
-              alt="Profiilikuva"
-              onError={() => setPhotoError(true)}
-              className="w-40 h-40 rounded-full object-cover border-4 border-white/20 shadow-lg"
-            />
+            <div className="w-40 h-40 rounded-full overflow-hidden bg-gray-200 border-4 border-white/20 shadow-lg flex items-center justify-center">
+              {resolvedPhoto ? (
+                <img
+                  src={resolvedPhoto}
+                  alt="Profiilikuva"
+                  onError={() => setPhotoError(true)}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="w-16 h-16 text-gray-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 19.5a7.5 7.5 0 1115 0v.75A1.5 1.5 0 0118.75 21H5.25A1.5 1.5 0 013.75 20.25V19.5z"
+                  />
+                </svg>
+              )}
+            </div>
           </div>
 
           <div className="flex-1 text-white space-y-4">
@@ -155,6 +178,10 @@ const Profiili: React.FC = () => {
             <div>
               <h2 className="text-xl font-semibold">Sähköposti</h2>
               <p>{profileData.email}</p>
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold">Yrityksen nimi</h2>
+              <p>{profileData.companyName || 'Ei määritelty'}</p>
             </div>
             <div>
               <h2 className="text-xl font-semibold">Kuvaus</h2>
@@ -195,4 +222,3 @@ const Profiili: React.FC = () => {
 };
 
 export default Profiili;
-

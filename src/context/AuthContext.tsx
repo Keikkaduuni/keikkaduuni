@@ -1,7 +1,9 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import axios from 'axios';
+import { useContext } from 'react';
 
 interface User {
+  id: string;
   email: string;
   name: string;
   description?: string;
@@ -18,9 +20,10 @@ interface AuthContextType {
   logout: () => void;
   isAuthenticated: boolean;
   fetchUser: () => Promise<void>;
+  getToken: () => string | null;
 }
 
-export const AuthContext = createContext<AuthContextType>({
+const AuthContext = createContext<AuthContextType>({
   user: null,
   setUser: () => {},
   token: null,
@@ -30,12 +33,13 @@ export const AuthContext = createContext<AuthContextType>({
   fetchUser: async () => {},
 });
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
+const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
 
   const normalizeUser = (raw: any): User => {
     return {
+      id: raw.id,
       email: raw.email || '',
       name: raw.name || '',
       description: raw.description?.trim() || '',
@@ -60,6 +64,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         withCredentials: true,
       });
 
+      console.log('✅ Fetched user from backend:', res.data); // 🔍 Added log
+
       const normalized = normalizeUser(res.data);
       setUser(normalized);
 
@@ -67,28 +73,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       storage.setItem('user', JSON.stringify(normalized));
     } catch (err) {
       console.error('❌ Failed to fetch user:', err);
-      logout(); // fallback if token expired or fetch fails
+      logout();
     }
   };
 
   useEffect(() => {
     const storedToken =
       localStorage.getItem('token') || sessionStorage.getItem('token');
-    const storedUser =
-      localStorage.getItem('user') || sessionStorage.getItem('user');
-
-    if (storedToken) setToken(storedToken);
-
-    if (storedUser && storedUser !== 'undefined' && storedUser !== 'null') {
-      try {
-        const parsed = JSON.parse(storedUser);
-        setUser(normalizeUser(parsed));
-      } catch (err) {
-        console.error('❌ Invalid stored user JSON:', err);
-        logout();
-      }
+    if (storedToken) {
+      setToken(storedToken);
+      fetchUser(); // Always fetch fresh user
     }
   }, []);
+
+  const getToken = () => token || localStorage.getItem('token') || sessionStorage.getItem('token');
+
 
   const login = (token: string, rawUser: User, rememberMe: boolean = false) => {
     const normalized = normalizeUser(rawUser);
@@ -106,19 +105,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
-    localStorage.clear();
-    sessionStorage.clear();
-    setToken(null);
-    setUser(null);
-  };
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  sessionStorage.removeItem('token');
+  sessionStorage.removeItem('user');
+  setToken(null);
+  setUser(null);
+};
+
 
   const isAuthenticated = Boolean(token);
 
   return (
     <AuthContext.Provider
-      value={{ user, setUser, token, login, logout, isAuthenticated, fetchUser }}
+      value={{ user, setUser, token, login, logout, isAuthenticated, fetchUser, getToken}}
     >
       {children}
     </AuthContext.Provider>
   );
 };
+
+export { AuthContext, AuthProvider };
+
+export const useAuth = () => useContext(AuthContext);
+

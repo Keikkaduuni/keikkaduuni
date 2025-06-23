@@ -1,6 +1,6 @@
 import React, { useState, useContext, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { UserCircle } from 'lucide-react';
+import { UserCircle, LogOut } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 
 const ProfileDropdown: React.FC = () => {
@@ -9,7 +9,6 @@ const ProfileDropdown: React.FC = () => {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -38,9 +37,11 @@ const ProfileDropdown: React.FC = () => {
       </button>
 
       <div
-        className={`absolute right-0 mt-2 w-40 bg-black border border-white/20 rounded shadow-lg z-50
+        className={`
+          absolute right-2 mt-2 w-40 bg-black border border-white/20 rounded shadow-lg z-50
           transform transition-all duration-300 origin-top-right
           ${open ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'}
+          uppercase divide-y divide-white/20
         `}
       >
         <Link
@@ -50,10 +51,28 @@ const ProfileDropdown: React.FC = () => {
         >
           Profiili
         </Link>
+
+        <Link
+          to="/omat-palvelut"
+          onClick={() => setOpen(false)}
+          className="block px-4 py-2 hover:bg-white hover:text-black transition"
+        >
+          Omat Palvelut
+        </Link>
+
+        <Link
+          to="/omat-tarpeet"
+          onClick={() => setOpen(false)}
+          className="block px-4 py-2 hover:bg-white hover:text-black transition"
+        >
+          Omat Tarpeet
+        </Link>
+
         <button
           onClick={handleLogout}
-          className="block w-full text-left px-4 py-2 hover:bg-white hover:text-black transition"
+          className="flex items-center w-full text-left px-4 py-2 hover:bg-white hover:text-black transition"
         >
+          <LogOut className="w-4 h-4 mr-2" />
           Kirjaudu ulos
         </button>
       </div>
@@ -62,4 +81,3 @@ const ProfileDropdown: React.FC = () => {
 };
 
 export default ProfileDropdown;
-

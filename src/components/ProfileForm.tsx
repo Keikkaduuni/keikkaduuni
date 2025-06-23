@@ -13,12 +13,15 @@ const ProfileForm = () => {
     skills: '',
   });
 
+  const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
   const [nameError, setNameError] = useState('');
   const [checkingName, setCheckingName] = useState(false);
 
   useEffect(() => {
     if (user) {
+      console.log('🟡 Incoming user from context:', user);
       setFormData({
         name: user.name || '',
         companyName: user.companyName || '',
@@ -28,23 +31,31 @@ const ProfileForm = () => {
           ? user.skills.join(', ')
           : user.skills || '',
       });
+      setPreviewUrl(null);
       setRemovePhoto(false);
+      setNewPhotoFile(null);
     }
   }, [user]);
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (name === 'name') setNameError('');
+  };
 
-    if (name === 'name') {
-      setNameError('');
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setNewPhotoFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+      setRemovePhoto(false);
     }
   };
 
   const handleRemovePhoto = () => {
     setFormData((prev) => ({ ...prev, profilePhoto: '' }));
+    setPreviewUrl(null);
+    setNewPhotoFile(null);
     setRemovePhoto(true);
   };
 
@@ -52,19 +63,14 @@ const ProfileForm = () => {
     try {
       setCheckingName(true);
       const res = await axios.get('http://localhost:5001/api/check-name', {
-        params: {
-          name: name.trim(),
-          userId: user?.email || '', // send current user's email to exclude self
-        },
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
+        params: { name, email: user?.email || '' },
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
       });
-
       setCheckingName(false);
       return res.data?.taken;
     } catch (err) {
-      console.error('Virhe nimen tarkistuksessa:', err);
+      console.error('Name check failed:', err);
+      setCheckingName(false);
       return false;
     }
   };
@@ -84,13 +90,10 @@ const ProfileForm = () => {
       return;
     }
 
-    try {
-      const token = localStorage.getItem('token');
       const payload = new FormData();
-
       payload.append('name', trimmedName);
-      payload.append('companyName', formData.companyName.trim());
-      payload.append('description', formData.description.trim() || '');
+      payload.append('companyName', formData.companyName.trim() || ''); // ✅ REQUIRED
+      payload.append('description', formData.description || '');
       payload.append(
         'skills',
         JSON.stringify(
@@ -100,47 +103,56 @@ const ProfileForm = () => {
             .filter(Boolean)
         )
       );
+      if (removePhoto) payload.append('removePhoto', 'true');
+      if (newPhotoFile) payload.append('profilePhoto', newPhotoFile);
 
-      if (removePhoto) {
-        payload.append('removePhoto', 'true');
-      }
+    for (let pair of payload.entries()) {
+      console.log(`📦 ${pair[0]}:`, pair[1]);
+    }
 
+    try {
       const res = await axios.put('http://localhost:5001/api/profile', payload, {
         withCredentials: true,
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
       });
 
       if (res.status === 200) {
+        console.log('✅ Server returned updated user:', res.data.user);
+
         await fetchUser();
+
+        // ⚡ Update company name from context user after refresh
+        setTimeout(() => {
+          if (user) {
+            setFormData((prev) => ({
+              ...prev,
+              companyName: user.companyName || '',
+            }));
+            console.log('🔁 Updated formData.companyName after fetch:', user.companyName);
+          }
+        }, 0);
+
         alert('Profiili päivitetty!');
-        setRemovePhoto(false);
       }
     } catch (err) {
-      console.error(err);
+      console.error('❌ Päivitys epäonnistui:', err);
       alert('Päivitys epäonnistui');
     }
   };
 
+  console.log("🧠 Current formData.companyName:", formData.companyName);
+
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="max-w-md mx-auto p-4 bg-white shadow-md rounded-lg text-black"
-    >
+    <form onSubmit={handleSubmit} className="max-w-md mx-auto p-4 bg-white shadow-md rounded-lg text-black">
       <h2 className="text-xl font-bold mb-4">Muokkaa profiilia</h2>
 
-      {user?.email && (
-        <>
-          <label className="block mb-2">Sähköposti</label>
-          <input
-            type="email"
-            value={user.email}
-            disabled
-            className="w-full border p-2 mb-4 bg-gray-100 cursor-not-allowed"
-          />
-        </>
-      )}
+      <label className="block mb-2">Sähköposti</label>
+      <input
+        type="email"
+        value={user?.email || ''}
+        disabled
+        className="w-full border p-2 mb-4 bg-gray-100 cursor-not-allowed"
+      />
 
       <label className="block mb-1">Nimi</label>
       <input
@@ -150,9 +162,7 @@ const ProfileForm = () => {
         onChange={handleChange}
         className={`w-full border p-2 mb-1 ${nameError ? 'border-red-500' : ''}`}
       />
-      {nameError && (
-        <p className="text-sm text-red-600 mb-4">{nameError}</p>
-      )}
+      {nameError && <p className="text-sm text-red-600 mb-4">{nameError}</p>}
 
       <label className="block mb-2">Yrityksen nimi</label>
       <input
@@ -163,32 +173,17 @@ const ProfileForm = () => {
         className="w-full border p-2 mb-4"
       />
 
-      <label className="block mb-2">Profiilikuva (URL)</label>
-      <input
-        type="text"
-        name="profilePhoto"
-        value={formData.profilePhoto}
-        onChange={handleChange}
-        className="w-full border p-2 mb-2"
-        disabled
-      />
+      <label className="block mb-2">Uusi profiilikuva</label>
+      <input type="file" accept="image/*" onChange={handleFileChange} className="w-full mb-2" />
 
-      {formData.profilePhoto && !removePhoto && (
+      {(previewUrl || formData.profilePhoto) && !removePhoto && (
         <div className="mb-4 text-center">
           <img
-            src={
-              formData.profilePhoto.startsWith('http')
-                ? formData.profilePhoto
-                : `http://localhost:5001${formData.profilePhoto}`
-            }
-            alt="Profile preview"
+            src={previewUrl || `http://localhost:5001${formData.profilePhoto}`}
+            alt="Profile"
             className="w-24 h-24 object-cover rounded-full mx-auto"
           />
-          <button
-            type="button"
-            onClick={handleRemovePhoto}
-            className="mt-2 text-sm text-red-600 hover:underline"
-          >
+          <button type="button" onClick={handleRemovePhoto} className="mt-2 text-sm text-red-600 hover:underline">
             Poista kuva
           </button>
         </div>

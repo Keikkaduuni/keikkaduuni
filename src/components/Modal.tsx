@@ -26,12 +26,12 @@ interface ModalProps {
 }
 
 const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
-  const [name, setName] = useState(userData.name || '');
-  const [companyName, setCompanyName] = useState(userData.companyName || '');
-  const [description, setDescription] = useState(userData.description || '');
-  const [skills, setSkills] = useState((userData.skills || []).join(', '));
+  const [name, setName] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [description, setDescription] = useState('');
+  const [skills, setSkills] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState(userData.profilePhoto || '');
+  const [preview, setPreview] = useState('');
   const [removePhoto, setRemovePhoto] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +43,28 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+
+  useEffect(() => {
+    setName(userData.name || '');
+    setCompanyName(userData.companyName || '');
+    setDescription(userData.description || '');
+    setSkills((userData.skills || []).join(', '));
+    setPhotoFile(null);
+    setRemovePhoto(false);
+    setError(null);
+    setCropping(false);
+    setImageSrc(null);
+    setCroppedAreaPixels(null);
+
+    if (userData.profilePhoto) {
+      const fullUrl = userData.profilePhoto.startsWith('http')
+        ? userData.profilePhoto
+        : `http://localhost:5001${userData.profilePhoto}`;
+      setPreview(fullUrl);
+    } else {
+      setPreview('');
+    }
+  }, [userData]);
 
   useEffect(() => {
     if (photoFile) {
@@ -116,7 +138,7 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
       const cleanSkills = skills
         .split(',')
         .map((s) => s.trim())
-        .filter((s) => s !== '');
+        .filter(Boolean);
 
       onSave({
         name: name.trim(),
@@ -129,18 +151,16 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
       });
 
       setError(null);
+      onClose();
+      document.body.classList.add('fade-out');
+      setTimeout(() => window.location.reload(), 400);
     } catch (err) {
       console.error('Name/company check failed', err);
       setError('Virhe tarkistuksessa');
     }
   };
 
-  const resolvedPreview =
-    removePhoto || !preview
-      ? 'https://www.svgrepo.com/show/501943/user.svg'
-      : preview.startsWith('http')
-      ? preview
-      : `http://localhost:5001${preview}`;
+  const resolvedPreview = removePhoto || !preview ? null : preview;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
@@ -150,13 +170,28 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
         exit={{ scale: 0.95, opacity: 0 }}
         className="bg-white text-black rounded-xl w-full max-w-xl p-6 space-y-4 relative"
       >
-        {/* Profile Image */}
         <div className="absolute -top-14 left-1/2 -translate-x-1/2 w-28 h-28 rounded-full border-4 border-white shadow-lg overflow-hidden relative group bg-gray-200">
-          <img
-            src={resolvedPreview}
-            alt="Profiilikuva"
-            className="w-full h-full object-cover"
-          />
+          {resolvedPreview ? (
+            <img src={resolvedPreview} alt="Profiilikuva" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-gray-500">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="w-12 h-12"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 19.5a7.5 7.5 0 1115 0v.75A1.5 1.5 0 0118.75 21H5.25A1.5 1.5 0 013.75 20.25V19.5z"
+                />
+              </svg>
+            </div>
+          )}
+
           <button
             onClick={() => fileInputRef.current?.click()}
             className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition"
@@ -175,7 +210,6 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
           />
         </div>
 
-        {/* Remove Photo */}
         {(preview || userData.profilePhoto) && !removePhoto && (
           <div className="flex justify-center mt-2">
             <button
@@ -191,13 +225,9 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
           </div>
         )}
 
-        {/* Title and Error */}
         <h2 className="text-2xl font-bold text-center mt-16 mb-4">Muokkaa profiilia</h2>
-        {error && (
-          <p className="text-red-600 font-semibold text-sm text-center -mt-2">{error}</p>
-        )}
+        {error && <p className="text-red-600 font-semibold text-sm text-center -mt-2">{error}</p>}
 
-        {/* Fields */}
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-semibold mb-1">Nimi</label>
@@ -211,7 +241,6 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
               className="w-full border p-2 rounded"
             />
           </div>
-
           <div>
             <label className="block text-sm font-semibold mb-1">Yrityksen nimi</label>
             <input
@@ -224,7 +253,6 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
               className="w-full border p-2 rounded"
             />
           </div>
-
           <div>
             <label className="block text-sm font-semibold mb-1">Kuvaus</label>
             <textarea
@@ -234,7 +262,6 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
               className="w-full border p-2 rounded"
             />
           </div>
-
           <div>
             <label className="block text-sm font-semibold mb-1">Taidot (pilkuilla eroteltuna)</label>
             <input
@@ -246,7 +273,6 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
           </div>
         </div>
 
-        {/* Buttons */}
         <div className="flex justify-end gap-3 mt-6">
           <button
             onClick={onClose}
@@ -262,7 +288,6 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
           </button>
         </div>
 
-        {/* Cropping Modal */}
         {cropping && (
           <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center">
             <div className="relative w-[90vw] h-[80vh] bg-white rounded-xl overflow-hidden">

@@ -65,7 +65,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Get current logged-in user info
-router.get('/me', authenticateToken, async (req, res) => {
+router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (!user) return res.status(404).json({ error: 'User not found' });

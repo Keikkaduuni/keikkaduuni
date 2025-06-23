@@ -8,34 +8,153 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  password     String
-  name         String
-  companyName  String?
-  profilePhoto String?
-  description  String?
-  skills       String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  palvelut     Palvelu[] // one-to-many relation
-  tarpeet      Tarve[]
+  id             String                      @id @default(cuid())
+  email          String                      @unique
+  password       String
+  name           String
+  companyName    String?
+  profilePhoto   String?
+  description    String?
+  skills         String?
+  createdAt      DateTime                    @default(now())
+  updatedAt      DateTime                    @updatedAt
+
+  palvelut       Palvelu[]
+  tarpeet        Tarve[]
+  messages       Message[]
+  conversations  ConversationParticipant[]
+  reviewsReceived Review[]                   @relation("ReviewedUser")
+  reviewsGiven    Review[]                   @relation("Reviewer")
+  bookings        Booking[]
+  offers          Offer[]
+}
+
+model Review {
+  id          Int      @id @default(autoincrement())
+  rating      Int
+  comment     String
+  createdAt   DateTime @default(now())
+  user        User     @relation("ReviewedUser", fields: [userId], references: [id])
+  userId      String
+  reviewer    User     @relation("Reviewer", fields: [reviewerId], references: [id])
+  reviewerId  String
+}
+
+model Booking {
+  id               String    @id @default(cuid())
+  userId           String
+  palveluId        Int
+  date             DateTime
+  createdAt        DateTime @default(now())
+  hours            Int?
+  status           String   @default("pending")
+  isRead           Boolean  @default(false)
+  paymentCompleted Boolean  @default(false)
+
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  palvelu          Palvelu  @relation(fields: [palveluId], references: [id], onDelete: Cascade)
 }
 
 model Palvelu {
-  id          Int     @id @default(autoincrement())
-  title       String
-  description String
-  contact     String
-  userId      String
-  user        User    @relation(fields: [userId], references: [id])
+  id              Int            @id @default(autoincrement())
+  title           String
+  description     String
+  category        String?
+  location        String?
+  price           Float?
+  unit            String?
+  photoUrl        String?
+  userId          String
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime?      @updatedAt
+
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations   Conversation[]
+  bookings        Booking[]
+  reports         Report[]
 }
 
 model Tarve {
-  id          Int     @id @default(autoincrement())
-  title       String
-  description String
-  contact     String
-  userId      String
-  user        User    @relation(fields: [userId], references: [id])
+  id              Int            @id @default(autoincrement())
+  title           String
+  description     String
+  category        String?
+  location        String?
+  photoUrl        String?
+  userId          String
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime?      @updatedAt
+
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations   Conversation[]
+  reports         Report[]
+  offers          Offer[]
+}
+
+model Conversation {
+  id                 String                      @id @default(cuid())
+  palveluId          Int?
+  tarveId            Int?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+
+  liittyyPalveluun   Palvelu?                    @relation(fields: [palveluId], references: [id])
+  liittyyTarpeeseen  Tarve?                      @relation(fields: [tarveId], references: [id])
+  participants       ConversationParticipant[]
+  messages           Message[]
+}
+
+model ConversationParticipant {
+  userId             String
+  conversationId     String
+  lastSeenAt         DateTime?
+  deleted            Boolean     @default(false)
+  archived           Boolean     @default(false)  // ✅ NEW: user can archive convo
+  mutedUntil         DateTime?                   // ✅ NEW: user can mute convo temporarily
+
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation       Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, conversationId])
+}
+
+model Message {
+  id                 String       @id @default(cuid())
+  content            String
+  type               String       @default("text") // ✅ NEW: "text", "image", "system", "file", etc.
+  senderId           String
+  conversationId     String
+  createdAt          DateTime     @default(now())
+  imageUrls          String       @default("[]") 
+
+
+  fileUrl            String?                     // ✅ NEW: for file attachments
+
+  sender             User         @relation(fields: [senderId], references: [id])
+  conversation       Conversation @relation(fields: [conversationId], references: [id])
+}
+
+model Report {
+  id         String    @id @default(cuid())
+  palveluId  Int?
+  tarveId    Int?
+  userId     String?
+  reason     String
+  createdAt  DateTime  @default(now())
+
+  palvelu    Palvelu?  @relation(fields: [palveluId], references: [id])
+  tarve      Tarve?    @relation(fields: [tarveId], references: [id])
+}
+
+model Offer {
+  id         Int       @id @default(autoincrement())
+  tarveId    Int
+  userId     String
+  date       String                     // Used by frontend for display
+  price      Float
+  createdAt  DateTime   @default(now())
+  isRead     Boolean    @default(false)
+
+  tarve      Tarve      @relation(fields: [tarveId], references: [id])
+  user       User       @relation(fields: [userId], references: [id])
 }

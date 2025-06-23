@@ -1,11 +1,13 @@
 /** @type {import('tailwindcss').Config} */
+import lineClamp from '@tailwindcss/line-clamp';
+
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       fontFamily: {
         anton: ['Anton', 'sans-serif'],
-        inter: ['Inter', 'sans-serif']
+        inter: ['Inter', 'sans-serif'],
       },
       colors: {
         primary: {
@@ -38,7 +40,7 @@ export default {
           50: '#FEF2F2',
           500: '#EF4444',
           900: '#7F1D1D',
-        }
+        },
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-in-out',
@@ -56,5 +58,6 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [lineClamp],
 };
+

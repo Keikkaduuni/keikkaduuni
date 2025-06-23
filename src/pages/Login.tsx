@@ -31,9 +31,14 @@ const Login: React.FC = () => {
       }
 
       const data = await response.json();
+      console.log('📥 Response data from backend:', data);
+
 
       // Use context login to handle storage properly
       login(data.token, data.user, rememberMe);
+      localStorage.setItem('userId', data.user.id); // ✅ stores userId for ChatThread
+      console.log('📤 Called login() with token:', data.token);
+
 
       alert(`Tervetuloa takaisin, ${data.user.name}!`);
       navigate('/profiili');

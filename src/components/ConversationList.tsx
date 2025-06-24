@@ -108,9 +108,11 @@ const ConversationList: React.FC<ConversationListProps> = ({
                     
                     setSelectedBookingRequest?.(null); // ✅ clears booking view
                     onSelect(c);
-                   if (window.innerWidth < 768) {
-  sessionStorage.setItem('showMobileThread', 'true');
-}
+                    if (window.innerWidth < 768) {
+                      sessionStorage.setItem('showMobileThread', 'true');
+                       sessionStorage.setItem('selectedConversationId', c.id); 
+                     }
+
                 
                   }}
                   className={classNames(

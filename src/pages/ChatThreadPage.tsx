@@ -1,60 +1,20 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import ChatThread from '../components/ChatThread';
+// ChatThreadPage.tsx
+import { useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 
 const ChatThreadPage = () => {
-  const { id } = useParams(); // conversationId
-  const navigate = useNavigate();
-
-  const [conversation, setConversation] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { id } = useParams();
 
   useEffect(() => {
-    const fetchConversation = async () => {
-      try {
-        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-        const res = await axios.get(`http://localhost:5001/api/conversations/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setConversation(res.data);
-      } catch (err) {
-        console.error('Failed to load conversation', err);
-        setConversation(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (id) fetchConversation();
+    if (id) {
+      sessionStorage.setItem('showMobileThread', 'true');
+      sessionStorage.setItem('selectedConversationId', id);
+      sessionStorage.setItem('cameFromChatThreadPage', 'true'); // ✅ ADD THIS
+      window.location.replace('/viestit');
+    }
   }, [id]);
 
-  if (loading) {
-    return (
-      <div className="text-white/50 flex items-center justify-center h-full">
-        Ladataan keskustelua...
-      </div>
-    );
-  }
-
-  if (!conversation) {
-    return (
-      <div className="text-white/60 text-center p-6">
-        <p>Valitettavasti keskustelua ei löytynyt tai siihen ei ole oikeuksia.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="h-screen w-full overflow-hidden bg-black">
-      <ChatThread
-        conversation={conversation}
-        setConversation={setConversation}
-        showBackButton={true}
-        onBack={() => navigate(-1)} // ✅ Go back on mobile
-      />
-    </div>
-  );
+  return null;
 };
 
 export default ChatThreadPage;

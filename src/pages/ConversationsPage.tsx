@@ -7,9 +7,10 @@ import OwnListingList from '../components/OwnListingList';
 import BookingRequestList from '../components/BookingRequestList';
 import BookingDetailsPanel from '../components/BookingDetailsPanel';
 import Lahetetyt from '../components/Lahetetyt'; // ✅ Add this import
-import { useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom'; // ✅ BOTH imported together
+
 
 
 
@@ -56,10 +57,18 @@ const ConversationsPage = () => {
   const [showBookingCancelled, setShowBookingCancelled] = useState(false);
   const socketRef = useRef<any>(null);
   const [showMobileThread, setShowMobileThread] = useState(false);
+  const [mobileThreadKey, setMobileThreadKey] = useState(Date.now());
 
 
 
-  
+
+    const handleBack = () => {
+      setSelectedConversation(null);
+      setShowMobileThread(false);
+      sessionStorage.removeItem('showMobileThread');
+      sessionStorage.removeItem('selectedConversationId');
+    };
+
     
     const fetchOwnPalvelut = async () => {
       if (!token) return;
@@ -185,6 +194,8 @@ const ConversationsPage = () => {
   };
 }, [token]);
 
+    
+    
 
 
     useEffect(() => {
@@ -200,40 +211,52 @@ const ConversationsPage = () => {
     }, []);
 
 
-    useEffect(() => {
-      if (sessionStorage.getItem('showMobileThread') === 'true') {
-        setShowMobileThread(true);
-        sessionStorage.removeItem('showMobileThread');
-      }
-    }, []);
+
 
     
-  useEffect(() => {
-    if (!token) return;
-    let intervalId: NodeJS.Timeout;
-    const fetchData = async () => {
-      try {
-        const data = await fetchConversations(token);
-        setConversations(data);
-        if (selectedConversation) {
-          const updated = data.find((c) => c.id === selectedConversation.id);
-          if (updated) {
-            setSelectedConversation((prev) => ({
-              ...updated,
-              messages: updated.messages,
-            }));
-          } else {
-            setSelectedConversation(null);
+    useEffect(() => {
+      if (!token) return;
+      let intervalId: NodeJS.Timeout;
+
+      const fetchData = async () => {
+        try {
+          const data = await fetchConversations(token);
+          setConversations(data);
+
+          // ✅ PATCH: auto-select conversation from sessionStorage (MOBILE back fix)
+          const selectedIdFromSession = sessionStorage.getItem('selectedConversationId');
+          if (selectedIdFromSession) {
+            const selected = data.find((c) => c.id === Number(selectedIdFromSession));
+            if (selected) {
+              setSelectedConversation(selected);
+              setShowMobileThread(true);
+            }
+            sessionStorage.removeItem('selectedConversationId');
+              sessionStorage.removeItem('showMobileThread');
+
           }
+
+          if (selectedConversation) {
+            const updated = data.find((c) => c.id === selectedConversation.id);
+            if (updated) {
+              setSelectedConversation((prev) => ({
+                ...updated,
+                messages: updated.messages,
+              }));
+            } else {
+              setSelectedConversation(null);
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch conversations:', error);
         }
-      } catch (error) {
-        console.error('Failed to fetch conversations:', error);
-      }
-    };
-    fetchData();
-    intervalId = setInterval(fetchData, 5000);
-    return () => clearInterval(intervalId);
-  }, [token, selectedConversation]);
+      };
+
+      fetchData();
+      intervalId = setInterval(fetchData, 5000);
+      return () => clearInterval(intervalId);
+    }, [token, selectedConversation]);
+
 
   useEffect(() => {
     setSelectedListingId(null);
@@ -373,6 +396,8 @@ const ConversationsPage = () => {
     }, [token, activeTab]); // ✅ Entire useEffect block was incomplete
 
     const location = useLocation();
+    
+    
 
     useEffect(() => {
       const { fromSubtab, toast } = location.state || {};
@@ -413,6 +438,23 @@ const ConversationsPage = () => {
     
     
     
+
+    useEffect(() => {
+      const cameFromChatThreadPage = sessionStorage.getItem('cameFromChatThreadPage') === 'true';
+
+      if (location.pathname === '/viestit') {
+        if (cameFromChatThreadPage) {
+          // Just reset the flag so we don’t do this next time
+          sessionStorage.removeItem('cameFromChatThreadPage');
+        } else {
+          setShowMobileThread(false);
+          setSelectedConversation(null);
+          setSelectedBookingRequest(null);
+          sessionStorage.removeItem('showMobileThread');
+          sessionStorage.removeItem('selectedConversationId');
+        }
+      }
+    }, [location.pathname]);
 
     
     
@@ -593,6 +635,9 @@ const ConversationsPage = () => {
                         onSelect={(c) => {
                           setSelectedConversation(c);
                           setSelectedBookingRequest(null);
+                            if (isMobile) {
+                                setShowMobileThread(true); // ✅ fixes back button behavior
+                              }
                         }}
                         selectedConversationId={selectedConversation?.id}
                         setSelectedBookingRequest={setSelectedBookingRequest} // ✅ ← ADD THIS
@@ -605,24 +650,44 @@ const ConversationsPage = () => {
             )}
 
             
-            {isMobile && activeTab !== 'CONTACTED' && showMobileThread && !!selectedConversation && !selectedBookingRequest && (
-              <div className="flex-1 h-full overflow-hidden">
-                <ChatThread
-                  key={selectedConversation.id}
-                  conversation={selectedConversation}
-                  setConversation={setSelectedConversation}
-                  showBackButton={true}
-                  onBack={() => {
-                    console.log('⬅️ Back button clicked');
-                    setShowMobileThread(false);         // 👈 force hide
-                    setSelectedConversation(null);
-                    setTimeout(() => {
-                      window.dispatchEvent(new Event('resize'));
-                    }, 0);
-                  }}
-                />
-              </div>
+            {isMobile && activeTab !== 'CONTACTED' && (
+              <>
+                {selectedConversation ? (
+                  <div className="h-[calc(100vh-60px)] overflow-hidden">
+                    <ChatThread
+                      conversation={selectedConversation}
+                      setConversation={setSelectedConversation}
+                      showBackButton={true}
+                      onBack={() => {
+                        console.log('⬅️ Mobile back pressed');
+                        setSelectedConversation(null);
+                        setSelectedBookingRequest(null);
+                        sessionStorage.removeItem('selectedConversationId');
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="h-[calc(100vh-60px)] overflow-hidden">
+                    <ConversationList
+                      conversations={currentTabConversations.filter(
+                        (c) =>
+                          (activeTab === 'PALVELUT' && c.palveluId === selectedListingId) ||
+                          (activeTab === 'TARPEET' && c.tarveId === selectedListingId)
+                      )}
+                      onSelect={(c) => {
+                        setSelectedConversation(c);
+                        setSelectedBookingRequest(null);
+                      }}
+                      selectedConversationId={selectedConversation?.id}
+                      setSelectedBookingRequest={setSelectedBookingRequest}
+                    />
+                  </div>
+                )}
+              </>
             )}
+
+
+
 
 
 

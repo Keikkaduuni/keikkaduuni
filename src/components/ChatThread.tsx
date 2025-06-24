@@ -44,7 +44,7 @@ const groupMessagesByDate = (messages: any[]) => {
 };
  
 const useIsMobile = () => {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
@@ -52,6 +52,7 @@ const useIsMobile = () => {
   }, []);
   return isMobile;
 };
+
 
 const ChatThread = ({ conversation, setConversation, showBackButton = true, onBack }: ChatThreadProps) => {
 
@@ -185,12 +186,7 @@ const ChatThread = ({ conversation, setConversation, showBackButton = true, onBa
 
 
 
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    container.addEventListener('scroll', onScroll);
-    return () => container.removeEventListener('scroll', onScroll);
-  }, [page, hasMore, conversation.id]);
+  
 
   useEffect(() => {
     const socket = getSocket();
@@ -224,37 +220,47 @@ useEffect(() => {
 
 
 useEffect(() => {
-  const isMobile = window.innerWidth < 768;
   if (isMobile) {
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = '';
     };
   }
-}, []);
+}, [isMobile]);
+
 
 
 
 
  return (
-     <div className="flex flex-col flex-1 h-full overflow-hidden">
+  <div
+  className={classNames(
+    'absolute inset-0 bg-black flex flex-col',
+    isMobile ? 'z-50' : 'relative flex-1'
+  )}
+>
 
-    {/* Top bar */}
-    <div className="sticky top-0 p-4 border-b border-white/10 bg-black flex items-center justify-between gap-3 z-10">
+    {/* 🔝 Top bar - sticky */}
+      <div className="sticky top-0 z-10 p-4 border-b border-white/10 bg-black flex items-center justify-between gap-3 shrink-0">
+
       {isMobile && showBackButton && (
-  <button
-    onClick={() => {
-      console.log('⬅️ Mobile back pressed');
-      if (onBack) onBack();
-    }}
-    className="text-white px-4 py-2 text-xl"
-  >
-    ←
-  </button>
-)}
+        <button
+          onClick={() => {
+            console.log('⬅️ Mobile back pressed');
+           if (onBack) {
+            console.log('⬅️ Mobile back pressed');
+              sessionStorage.removeItem('showMobileThread');
+              sessionStorage.removeItem('selectedConversationId');
+              setConversation(null); // ✅ clears the thread
+              onBack(); // triggers UI to rerender ConversationList
+             }
 
-
-
+          }}
+          className="text-white px-4 py-2 text-xl"
+        >
+          ←
+        </button>
+      )}
       <div className="flex items-center gap-2 min-w-0 flex-1">
         <img
           src={other?.profilePhoto || '/default-avatar.png'}
@@ -301,33 +307,20 @@ useEffect(() => {
       </div>
     </div>
 
-    {/* Scroll-to-bottom button */}
-    {showScrollToBottom && (
-      <button
-        onClick={() => {
-          scrollContainerRef.current?.scrollTo({
-            top: scrollContainerRef.current.scrollHeight,
-            behavior: 'smooth',
-          });
-        }}
-        className="fixed bottom-24 sm:bottom-20 right-4 z-50 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-md text-sm"
-      >
-        ⬇ Uudet viestit
-      </button>
-    )}
-
-    {/* Messages */}
+    {/* 🧠 Messages area (scrollable) */}
     <div
-  ref={scrollContainerRef}
-  className="flex-1 overflow-y-auto px-4 py-2 space-y-4 scrollbar-thin scrollbar-thumb-white/20"
-  style={{ overscrollBehavior: 'contain' }}
->
-
+      ref={scrollContainerRef}
+      onScroll={onScroll}
+      className="flex-1 overflow-y-auto px-4 pt-20 py-2 space-y-4 scrollbar-thin scrollbar-thumb-white/20"
+      style={{ overscrollBehavior: 'contain' }}
+    >
       {sortedDates.map((date) => {
         let hasInsertedUnreadSeparator = false;
         return (
           <div key={date} className="space-y-2">
-            <div className="text-xs text-center text-white/40">— {formatDateHeader(date)} —</div>
+            <div className="text-xs text-center text-white/40">
+              — {formatDateHeader(date)} —
+            </div>
             {grouped[date].map((msg) => {
               const isOwn = msg.senderId === userId;
               const isFailed = errorMessageIds.includes(msg.id);
@@ -341,10 +334,24 @@ useEffect(() => {
               return (
                 <React.Fragment key={msg.id}>
                   {showUnread && (
-                    <div className="text-xs text-center text-yellow-400 my-2">— Uudet viestit —</div>
+                    <div className="text-xs text-center text-yellow-400 my-2">
+                      — Uudet viestit —
+                    </div>
                   )}
-                  <div className={classNames('flex flex-col', isOwn ? 'items-end' : 'items-start')}>
-                    <div className={classNames('relative group max-w-[75%] p-3 rounded-2xl text-sm break-words', isOwn ? 'bg-blue-600 text-white' : 'bg-white/10 text-white')}>
+                  <div
+                    className={classNames(
+                      'flex flex-col',
+                      isOwn ? 'items-end' : 'items-start'
+                    )}
+                  >
+                    <div
+                      className={classNames(
+                        'relative group max-w-[75%] p-3 rounded-2xl text-sm break-words',
+                        isOwn
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white/10 text-white'
+                      )}
+                    >
                       {msg.content}
                       {msg.imageUrls?.map((url: string, i: number) => (
                         <img
@@ -363,7 +370,14 @@ useEffect(() => {
                         </button>
                       )}
                     </div>
-                    <div className={classNames('text-[10px] mt-1', isOwn ? 'text-right pr-1 text-white/40' : 'text-left pl-1 text-white/40')}>
+                    <div
+                      className={classNames(
+                        'text-[10px] mt-1',
+                        isOwn
+                          ? 'text-right pr-1 text-white/40'
+                          : 'text-left pl-1 text-white/40'
+                      )}
+                    >
                       {formatTime(msg.createdAt)}
                     </div>
                     {isOwn && isFailed && (
@@ -371,7 +385,9 @@ useEffect(() => {
                         Viestin lähetys epäonnistui
                         <button
                           onClick={() => {
-                            setErrorMessageIds((prev) => prev.filter((id) => id !== msg.id));
+                            setErrorMessageIds((prev) =>
+                              prev.filter((id) => id !== msg.id)
+                            );
                             setNewMessage(msg.content);
                             setFiles(msg.imageUrls || []);
                             handleSendMessage();
@@ -392,7 +408,22 @@ useEffect(() => {
       <div ref={messagesEndRef} />
     </div>
 
-    {/* File preview */}
+    {/* 🔽 Scroll to bottom */}
+    {showScrollToBottom && (
+      <button
+        onClick={() => {
+          scrollContainerRef.current?.scrollTo({
+            top: scrollContainerRef.current.scrollHeight,
+            behavior: 'smooth',
+          });
+        }}
+        className="fixed bottom-24 sm:bottom-20 right-4 z-50 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-md text-sm"
+      >
+        ⬇ Uudet viestit
+      </button>
+    )}
+
+    {/* 📎 File Preview */}
     {files.length > 0 && (
       <div className="px-4 pb-3">
         <div className="text-sm text-white/70 mb-1">Esikatselu:</div>
@@ -405,7 +436,9 @@ useEffect(() => {
                 onClick={() => setModalPreviewUrl(previewUrls[index])}
               />
               <button
-                onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))}
+                onClick={() =>
+                  setFiles((prev) => prev.filter((_, i) => i !== index))
+                }
                 className="absolute -top-2 -right-2 bg-black text-white/70 rounded-full w-5 h-5 text-xs flex items-center justify-center hover:text-red-400"
               >
                 ✕
@@ -416,23 +449,8 @@ useEffect(() => {
       </div>
     )}
 
-    {/* Preview modal */}
-    {modalPreviewUrl && (
-      <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50">
-        <div className="relative">
-          <img src={modalPreviewUrl} className="max-w-[90vw] max-h-[90vh] rounded" />
-          <button
-            onClick={() => setModalPreviewUrl(null)}
-            className="absolute -top-3 -right-3 bg-black text-white/70 rounded-full w-8 h-8 flex items-center justify-center hover:text-red-400"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-    )}
-
-    {/* Input */}
-    <div className="p-4 flex items-center gap-2 sm:flex-nowrap bg-black">
+    {/* 💬 Sticky input */}
+    <div className="sticky bottom-0 z-10 p-4 flex items-center gap-2 sm:flex-nowrap bg-black shrink-0">
       <label className="cursor-pointer text-white hover:text-gray-300">
         <ImagePlus className="w-5 h-5 mt-1" />
         <input
@@ -442,7 +460,8 @@ useEffect(() => {
           className="hidden"
           onChange={(e) => {
             const selected = Array.from(e.target.files || []);
-            if (selected.length > 0) setFiles((prev) => [...prev, ...selected]);
+            if (selected.length > 0)
+              setFiles((prev) => [...prev, ...selected]);
           }}
         />
       </label>
@@ -475,13 +494,24 @@ useEffect(() => {
         onClick={handleSendMessage}
         disabled={!newMessage.trim() && files.length === 0}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-4 w-4"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M5 12h14M12 5l7 7-7 7"
+          />
         </svg>
       </button>
     </div>
 
-    {/* Delete modal */}
+    {/* ❌ Confirm delete modal */}
     {showDeleteModal && (
       <ConfirmModal
         title="Poistetaanko keskustelu?"
@@ -489,11 +519,15 @@ useEffect(() => {
         onConfirm={async () => {
           setShowDeleteModal(false);
           try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            await fetch(`http://localhost:5001/api/conversations/${conversation.id}`, {
-              method: 'DELETE',
-              headers: { Authorization: `Bearer ${token}` },
-            });
+            const token =
+              localStorage.getItem('token') || sessionStorage.getItem('token');
+            await fetch(
+              `http://localhost:5001/api/conversations/${conversation.id}`,
+              {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            );
             setConversation(null);
           } catch (err) {
             console.error('❌ Keskustelun poisto epäonnistui:', err);
@@ -504,6 +538,8 @@ useEffect(() => {
     )}
   </div>
 );
+
+
 
 };
 

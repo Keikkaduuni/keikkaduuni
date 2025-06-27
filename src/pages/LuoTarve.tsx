@@ -1,13 +1,14 @@
 // Example: src/pages/LuoTarve.tsx
 import React, { useState } from 'react';
 import TarveModal from '../components/TarveModal';
+import { BACKEND_URL } from '../config';
 
 const LuoTarve: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
 
   const handleCreateTarve = async (formData: FormData) => {
     try {
-      const response = await fetch('http://localhost:5001/tarpeet', {
+      const response = await fetch(`${BACKEND_URL}/tarpeet`, {
         method: 'POST',
         // ⚠️ Do NOT set `Content-Type` here!
         body: formData,

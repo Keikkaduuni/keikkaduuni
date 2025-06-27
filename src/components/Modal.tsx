@@ -3,6 +3,9 @@ import { motion } from 'framer-motion';
 import { Pencil, Trash2 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import getCroppedImg from '../utils/cropImage';
+import heic2any from 'heic2any';
+import { convertHeicToJpeg, isHeicFile } from '../utils/heicConverter';
+import { BACKEND_URL } from '../config';
 
 interface ModalProps {
   onClose: () => void;
@@ -31,7 +34,7 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
   const [description, setDescription] = useState('');
   const [skills, setSkills] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState('');
+  const [preview, setPreview] = useState<string | null>('');
   const [removePhoto, setRemovePhoto] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,10 +62,11 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
     if (userData.profilePhoto) {
       const fullUrl = userData.profilePhoto.startsWith('http')
         ? userData.profilePhoto
-        : `http://localhost:5001${userData.profilePhoto}`;
+        : `${BACKEND_URL}${userData.profilePhoto}`;
+      console.log('🔧 Loading profile photo:', fullUrl);
       setPreview(fullUrl);
     } else {
-      setPreview('');
+      setPreview(null);
     }
   }, [userData]);
 
@@ -80,8 +84,26 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
     }
   }, [photoFile]);
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    if (file && isHeicFile(file)) {
+      console.log('🔄 Modal - Attempting HEIC/HEIF conversion...');
+      const result = await convertHeicToJpeg(file);
+      
+      if (result.success && result.file) {
+        console.log('✅ Modal - HEIC/HEIF conversion successful:', result.file.name);
+        setImageSrc(URL.createObjectURL(result.file));
+        setPhotoFile(result.file);
+        setCropping(true);
+        setError(null);
+      } else {
+        console.error('❌ Modal - HEIC/HEIF conversion failed:', result.error);
+        setError(result.error || 'HEIC/HEIF-kuvan muuntaminen epäonnistui.');
+        setPhotoFile(null);
+        setCropping(false);
+      }
+      return;
+    }
     if (file) {
       const reader = new FileReader();
       reader.onload = () => {
@@ -118,8 +140,8 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
 
     try {
       const [nameRes, companyRes] = await Promise.all([
-        fetch(`http://localhost:5001/api/check-name?name=${encodeURIComponent(name.trim())}&email=${encodeURIComponent(userData.email)}`),
-        fetch(`http://localhost:5001/api/check-company?companyName=${encodeURIComponent(companyName.trim())}&email=${encodeURIComponent(userData.email)}`),
+        fetch(`${BACKEND_URL}/api/check-name?name=${encodeURIComponent(name.trim())}&email=${encodeURIComponent(userData.email)}`),
+        fetch(`${BACKEND_URL}/api/check-company?companyName=${encodeURIComponent(companyName.trim())}&email=${encodeURIComponent(userData.email)}`),
       ]);
 
       const nameData = await nameRes.json();
@@ -162,6 +184,12 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
 
   const resolvedPreview = removePhoto || !preview ? null : preview;
 
+  // Add error handling for image loading
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    console.error('❌ Image failed to load:', e.currentTarget.src);
+    e.currentTarget.style.display = 'none';
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
       <motion.div
@@ -172,7 +200,7 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
       >
         <div className="absolute -top-14 left-1/2 -translate-x-1/2 w-28 h-28 rounded-full border-4 border-white shadow-lg overflow-hidden relative group bg-gray-200">
           {resolvedPreview ? (
-            <img src={resolvedPreview} alt="Profiilikuva" className="w-full h-full object-cover" />
+            <img src={resolvedPreview} alt="Profiilikuva" className="w-full h-full object-cover" onError={handleImageError} />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-gray-500">
               <svg
@@ -327,3 +355,4 @@ const Modal: React.FC<ModalProps> = ({ onClose, userData, onSave }) => {
 };
 
 export default Modal;
+

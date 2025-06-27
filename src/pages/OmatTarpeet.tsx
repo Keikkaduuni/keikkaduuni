@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { FaChevronDown, FaCheck, FaTimes } from 'react-icons/fa';
-
-const BACKEND_URL = 'http://localhost:5001';
+import { BACKEND_URL } from '../config';
 
 // Tarpeet with count of pending offers
 interface Tarve {

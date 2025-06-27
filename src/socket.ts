@@ -1,30 +1,27 @@
 // socket.ts
-import { io, Socket } from 'socket.io-client';
+import { io } from 'socket.io-client';
+import { BACKEND_URL } from './config';
 
-let socket: Socket | null = null;
+let socket: any = null;
 
-export const connectSocket = () => {
-  if (socket && socket.connected) return socket;
-
-  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-  if (!token) return null;
-
-  socket = io('http://localhost:5001', {
-    auth: { token },
-    withCredentials: true,
-    transports: ['websocket'],
-  });
-
-  socket.on('connect_error', (err) => {
-    console.error('Socket connection error:', err);
-  });
-
+export const getSocket = () => {
+  if (!socket) {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    socket = io(BACKEND_URL, {
+      auth: { token },
+    });
+  }
   return socket;
 };
 
-export const getSocket = () => socket;
+export const disconnectSocket = () => {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+};
 
 export default {
-  connect: connectSocket,
   get: getSocket,
+  disconnect: disconnectSocket,
 };

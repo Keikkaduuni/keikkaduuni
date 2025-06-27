@@ -27,36 +27,36 @@ const ListingCard: React.FC<ListingCardProps> = ({ listing }) => {
       <Link
         to={detailPath}
         state={{ fromTab: listing.type.toLowerCase() }}
-        className="block bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-lg transition overflow-hidden flex flex-col h-full"
+        className="block bg-transparent transition flex flex-col h-full"
       >
 
         {listing.photoUrl && (
-          <div className="relative aspect-[4/3] w-full overflow-hidden">
+          <div className="relative aspect-[4/3] w-full overflow-hidden bg-gray-900 rounded-2xl">
             <img
-              src={photoSrc}
-              alt={`Kuva: ${listing.title}`}
-              className="w-full h-full object-cover object-center"
+              src={listing.photoUrl}
+              alt={listing.title}
+              className="w-full h-48 object-cover rounded-2xl"
             />
           </div>
         )}
 
         <div className="p-4 flex flex-col flex-grow">
           {/* Title */}
-          <h3 className="text-lg font-bold text-black truncate mb-1 sm:mb-2">
+          <h3 className="text-lg font-bold text-white truncate mb-1 sm:mb-2">
             {listing.title}
           </h3>
 
           {/* Description */}
           {listing.description && (
-            <p className="text-sm text-gray-700 line-clamp-2 sm:mb-3 mb-2">
+            <p className="text-sm text-gray-300 line-clamp-2 sm:mb-3 mb-2">
               {listing.description}
             </p>
           )}
 
           {/* Category + Location */}
-          <div className="text-sm text-gray-600 space-y-1 sm:mb-3 mb-2">
+          <div className="text-sm text-gray-400 space-y-1 sm:mb-3 mb-2">
             <div>
-              <span className="font-medium">Kategoria:</span> {listing.category}
+              <span className="font-medium text-white">Kategoria:</span> {listing.category}
             </div>
             <div className="flex items-center gap-1">
               <FaMapMarkerAlt className="text-gray-500 text-xs" />
@@ -67,7 +67,7 @@ const ListingCard: React.FC<ListingCardProps> = ({ listing }) => {
           {/* Price */}
           {listing.type === 'PALVELUT' && listing.price && listing.unit && (
             <div className="mt-auto">
-              <div className="inline-block px-3 py-1 bg-gray-100 rounded-full text-sm font-semibold text-black">
+              <div className="inline-block px-3 py-1 bg-white rounded-full text-sm font-semibold text-black">
                 Alkaen {listing.price} € / {listing.unit === 'hour' ? 'h' : listing.unit}
               </div>
             </div>
@@ -75,7 +75,7 @@ const ListingCard: React.FC<ListingCardProps> = ({ listing }) => {
 
           {/* Rating */}
           {typeof listing.rating === 'number' && (
-            <div className="mt-2 flex items-center text-yellow-500 text-sm font-semibold">
+            <div className="mt-2 flex items-center text-yellow-400 text-sm font-semibold">
               <FaStar className="mr-1" />
               {listing.rating.toFixed(1)}
             </div>

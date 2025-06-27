@@ -1,7 +1,11 @@
 // src/components/PalveluModal.tsx
 
 import React, { useEffect, useRef, useState } from 'react';
+import ReactDOM from 'react-dom';
 import { FaTimes, FaCamera } from 'react-icons/fa';
+import axios from 'axios';
+import heic2any from 'heic2any';
+import { convertHeicToJpeg, isHeicFile } from '../utils/heicConverter';
 
 type PalveluModalProps = {
   onClose: () => void;
@@ -96,7 +100,18 @@ const PalveluModal: React.FC<PalveluModalProps> = ({ onClose, onSubmit, categori
     setIsSubmitting(true);
     try {
       await onSubmit(formData);
-    } catch {}
+    } catch (err: any) {
+      console.error('Palvelu creation error:', err);
+      // Display the specific error message from the backend if available
+      if (err.response?.data?.error) {
+        setError(err.response.data.error);
+      } else if (err.message) {
+        setError(err.message);
+      } else {
+        setError('Palvelun luonti epäonnistui.');
+      }
+      return; // Don't close modal on error
+    }
     setIsSubmitting(false);
     onClose();
   };
@@ -122,17 +137,17 @@ const PalveluModal: React.FC<PalveluModalProps> = ({ onClose, onSubmit, categori
       )}
 
       <div
-        className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-8"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70 p-4"
         onClick={handleBackgroundClick}
       >
         <div
           ref={modalRef}
-          className="bg-white w-full max-w-6xl rounded-xl p-6 relative overflow-y-auto max-h-[90vh]"
+          className="relative bg-[#18181b] rounded-2xl w-full max-w-md p-8 shadow-2xl border border-[#232329]"
           onClick={(e) => e.stopPropagation()}
         >
           <button
             onClick={onClose}
-            className="absolute top-2 right-2 text-black bg-white rounded-full p-1 hover:bg-gray-100"
+            className="absolute top-2 right-2 text-white bg-[#232329] rounded-full p-1 hover:bg-gray-800"
           >
             <FaTimes size={20} />
           </button>
@@ -159,7 +174,7 @@ const PalveluModal: React.FC<PalveluModalProps> = ({ onClose, onSubmit, categori
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full border border-black rounded px-4 py-2 text-black font-sans focus:outline-none"
+                className="w-full border border-white rounded px-4 py-2 text-white font-sans focus:outline-none"
                 required
               />
             </div>
@@ -172,7 +187,7 @@ const PalveluModal: React.FC<PalveluModalProps> = ({ onClose, onSubmit, categori
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={5}
-                className="w-full border border-black rounded px-4 py-2 text-black font-sans focus:outline-none resize-none"
+                className="w-full border border-white rounded px-4 py-2 text-white font-sans focus:outline-none resize-none"
                 required
               />
             </div>
@@ -183,7 +198,7 @@ const PalveluModal: React.FC<PalveluModalProps> = ({ onClose, onSubmit, categori
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full border border-black rounded px-4 py-2 text-black font-sans"
+                  className="w-full border border-white rounded px-4 py-2 text-white font-sans"
                   required
                 >
                   <option value="">Valitse kategoria</option>
@@ -199,7 +214,7 @@ const PalveluModal: React.FC<PalveluModalProps> = ({ onClose, onSubmit, categori
                 <select
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className="w-full border border-black rounded px-4 py-2 text-black font-sans"
+                  className="w-full border border-white rounded px-4 py-2 text-white font-sans"
                   required
                 >
                   <option value="">Valitse sijainti</option>
@@ -221,7 +236,7 @@ const PalveluModal: React.FC<PalveluModalProps> = ({ onClose, onSubmit, categori
                   step="0.01"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
-                  className="w-full border border-black rounded px-4 py-2 text-black font-sans"
+                  className="w-full border border-white rounded px-4 py-2 text-white font-sans"
                   required
                 />
               </div>
@@ -230,7 +245,7 @@ const PalveluModal: React.FC<PalveluModalProps> = ({ onClose, onSubmit, categori
                 <select
                   value={unit}
                   onChange={(e) => setUnit(e.target.value as 'hour' | 'urakka')}
-                  className="w-full border border-black rounded px-4 py-2 text-black font-sans"
+                  className="w-full border border-white rounded px-4 py-2 text-white font-sans"
                   required
                 >
                   <option value="hour">€/tunti</option>
@@ -247,13 +262,42 @@ const PalveluModal: React.FC<PalveluModalProps> = ({ onClose, onSubmit, categori
                 id="photo-input"
                 type="file"
                 accept="image/*"
-                onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+                onChange={async e => {
+                  const file = e.target.files?.[0] ?? null;
+                  console.log('🔍 PalveluModal - File selected:', {
+                    name: file?.name,
+                    type: file?.type,
+                    size: file?.size,
+                    endsWithHeic: file?.name?.endsWith('.heic'),
+                    endsWithHeif: file?.name?.endsWith('.heif'),
+                    isHeicType: file?.type === 'image/heic',
+                    isHeifType: file?.type === 'image/heif'
+                  });
+                  
+                  if (file && isHeicFile(file)) {
+                    console.log('🔄 PalveluModal - Attempting HEIC/HEIF conversion...');
+                    const result = await convertHeicToJpeg(file);
+                    
+                    if (result.success && result.file) {
+                      console.log('✅ PalveluModal - HEIC/HEIF conversion successful:', result.file.name);
+                      setPhoto(result.file);
+                      setError('');
+                    } else {
+                      console.error('❌ PalveluModal - HEIC/HEIF conversion failed:', result.error);
+                      setError(result.error || 'HEIC/HEIF-kuvan muuntaminen epäonnistui.');
+                      setPhoto(null);
+                    }
+                    return;
+                  }
+                  console.log('📁 PalveluModal - Setting regular file:', file?.name);
+                  setPhoto(file);
+                }}
                 className="hidden"
                 required={!photo}
               />
               <label
                 htmlFor="photo-input"
-                className="inline-block px-4 py-2 bg-gray-200 rounded cursor-pointer hover:bg-gray-300 font-sans"
+                className="inline-block px-4 py-2 bg-gray-800 rounded cursor-pointer hover:bg-gray-700 font-sans"
               >
                 📷 Valitse kuva
               </label>
@@ -262,13 +306,13 @@ const PalveluModal: React.FC<PalveluModalProps> = ({ onClose, onSubmit, categori
                   <img
                     src={previewUrl}
                     alt="Esikatselu"
-                    className="h-36 rounded object-cover border border-gray-300 cursor-pointer"
+                    className="h-36 rounded object-cover border border-gray-700 cursor-pointer"
                     onClick={() => setShowLightbox(true)}
                   />
                   <button
                     type="button"
                     onClick={() => setPhoto(null)}
-                    className="mt-2 text-red-600 font-sans hover:underline"
+                    className="mt-2 text-white font-sans hover:underline"
                   >
                     Poista kuva
                   </button>
@@ -280,7 +324,7 @@ const PalveluModal: React.FC<PalveluModalProps> = ({ onClose, onSubmit, categori
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="bg-black text-white px-6 py-2 rounded hover:bg-gray-800 disabled:opacity-50 font-sans"
+                className="bg-white text-black px-6 py-2 rounded hover:bg-gray-200 disabled:opacity-50 font-sans"
                 style={{ fontFamily: 'Anton, sans-serif' }}
               >
                 {isSubmitting ? 'Lähetetään...' : 'Lähetä palvelu'}

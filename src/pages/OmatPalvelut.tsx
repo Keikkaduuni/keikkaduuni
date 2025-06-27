@@ -3,8 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { FaCog, FaStar } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
-
-const BACKEND_URL = 'http://localhost:5001';
+import { BACKEND_URL } from '../config';
 
 interface Palvelu {
   id: string;

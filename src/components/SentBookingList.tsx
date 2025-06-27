@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import ConfirmPaymentModal from '../components/ConfirmPaymentModal';
+import { motion, AnimatePresence } from 'framer-motion';
+import { getSocket } from '../socket';
 
 interface Booking {
   id: number;
@@ -22,8 +24,6 @@ interface SentBookingListProps {
   onSelect?: (booking: Booking) => void;
 }
 
-// ... (imports stay unchanged)
-
 const SentBookingList: React.FC<SentBookingListProps> = ({ selectedId, onSelect }) => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +35,7 @@ const SentBookingList: React.FC<SentBookingListProps> = ({ selectedId, onSelect 
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -42,7 +43,23 @@ const SentBookingList: React.FC<SentBookingListProps> = ({ selectedId, onSelect 
   };
 
   useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleBookingDeleted = (deletedBookingId: number) => {
+      setBookings(prev => prev.filter(booking => booking.id !== deletedBookingId));
+    };
+
+    socket.on('booking-deleted', handleBookingDeleted);
+
+    return () => {
+      socket.off('booking-deleted', handleBookingDeleted);
+    };
+  }, []);
+
+  useEffect(() => {
     const fetchBookings = async () => {
+      setError(null);
       const token = getToken();
       if (!token) return;
       try {
@@ -52,7 +69,7 @@ const SentBookingList: React.FC<SentBookingListProps> = ({ selectedId, onSelect 
         const data = await res.json();
         setBookings(data);
       } catch (err) {
-        console.error('❌ Failed to fetch sent bookings:', err);
+        setError('Lähetettyjen varausten haku epäonnistui');
       } finally {
         setLoading(false);
       }
@@ -74,8 +91,9 @@ const SentBookingList: React.FC<SentBookingListProps> = ({ selectedId, onSelect 
 
       setBookings((prev) => prev.filter((b) => b.id !== selectedBooking.id));
       showToast('✅ Maksu onnistui!');
+      sessionStorage.setItem('selectedConversationId', res.data.conversationId);
       setTimeout(() => {
-        navigate(`/viestit/${res.data.conversationId}`);
+        navigate('/viestit', { state: { fromPayment: true } });
       }, 1500);
     } catch (err: any) {
       console.error('❌ Payment failed:', err);
@@ -114,89 +132,117 @@ const SentBookingList: React.FC<SentBookingListProps> = ({ selectedId, onSelect 
     }
   };
 
-  if (loading) return <div className="text-white/40 px-4 py-6">Ladataan...</div>;
-  if (!bookings.length) return <div className="text-white/50 px-4 py-10">Ei varauspyyntöjä vielä</div>;
+  if (error) {
+    return (
+      <div className="fixed z-50 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg animate-slide-in left-1/2 -translate-x-1/2 bottom-4 w-[90vw] max-w-sm">
+        {error}
+      </div>
+    );
+  }
+
+  if (loading) return (
+    <div className="flex flex-col gap-4 px-4 py-10 items-center">
+      <div className="spinner mb-4" />
+      <div className="w-full max-w-md flex flex-col gap-4">
+        {[1,2,3].map((i) => (
+          <div key={i} className="animate-pulse bg-white/10 rounded-xl h-28 w-full" />
+        ))}
+      </div>
+      <div className="text-white/40 mt-6 text-lg font-semibold tracking-wide">Ladataan varauspyyntöjä...</div>
+    </div>
+  );
+  if (!bookings || bookings.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-white/40 text-sm pt-20">
+        <span>Ei lähetettyjä varauspyyntöjä</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2 px-4 py-4">
-      {bookings.map((b) => {
-        const formattedBookingDate = new Date(b.date).toLocaleDateString('fi-FI');
-        const formattedCreatedAt = new Date(b.createdAt).toLocaleDateString('fi-FI');
-
-        return (
-          <div
-            key={b.id}
-            onClick={() => {
-              if (onSelect) onSelect(b);
-              else {
-                navigate(`/palvelut/${b.palveluId}`, {
-                  state: { returnTo: 'VARAUSPYYNNÖT' },
-                });
-              }
-            }}
-            className={`cursor-pointer p-4 rounded-xl text-white border border-white/10 bg-white/5 hover:bg-white/10 ${
-              selectedId === b.id ? 'ring-2 ring-white/40' : ''
-            }`}
-          >
-            <div className="flex justify-between text-sm text-white/60 uppercase font-anton mb-2">
-              <span>Palvelu</span>
-              <span>Lähetetty: {formattedCreatedAt}</span>
-            </div>
-
-            <div className="border-t border-white/10 mb-2" />
-
-            <div className="text-white font-anton py-1 text-base mb-1">
-              {b.palveluTitle || 'Tuntematon'}
-            </div>
-
-            <div className="flex justify-between items-center font-anton text-sm text-white">
-              <span>Päivämäärälle: {formattedBookingDate}</span>
-              <span className="text-white text-3xl px-7 ml-2">→</span>
-            </div>
-
-            <div className="mt-2 font-anton text-sm text-white">
-              <span className="text-white">Tila:</span>{' '}
-              {b.status === 'approved' ? (
-                <span className="text-green-400">Hyväksytty</span>
-              ) : b.status === 'rejected' ? (
-                <span className="text-red-400">Ei hyväksytty</span>
-              ) : (
-                <span className="text-white/60">Odotetaan vastausta tekijältä</span>
-              )}
-            </div>
-
-            {(b.status === 'approved' || b.status === 'pending') && !b.paymentCompleted && (
-              <div className="mt-4 flex justify-between items-center gap-4">
-                {b.status === 'approved' && (
-                  <button
+      <AnimatePresence>
+        {bookings.map((b) => {
+          const formattedBookingDate = new Date(b.date).toLocaleDateString('fi-FI');
+          const formattedCreatedAt = new Date(b.createdAt).toLocaleDateString('fi-FI');
+          return (
+            <motion.div
+              key={b.id}
+              initial={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              onClick={() => {
+                if (onSelect) onSelect(b);
+                else {
+                  navigate(`/palvelut/${b.palveluId}`, {
+                    state: { returnTo: 'VARAUSPYYNNÖT' },
+                  });
+                }
+              }}
+              className={`cursor-pointer p-4 rounded-xl text-white border border-white/10 bg-white/5 hover:bg-white/10 ${
+                selectedId === b.id ? 'ring-2 ring-white/40' : ''
+              }`}
+            >
+              <div className="flex justify-between text-sm text-white/60 uppercase font-anton mb-2">
+                <span>Palvelu</span>
+                <span>Lähetetty: {formattedCreatedAt}</span>
+              </div>
+              <div className="border-t border-white/10 mb-2" />
+              <div className="text-white font-anton py-1 text-base mb-1">
+                {b.palveluTitle || 'Tuntematon'}
+              </div>
+              <div className="flex justify-between items-center font-anton text-sm text-white">
+                <span>Päivämäärälle: {formattedBookingDate}</span>
+                <span className="text-white text-3xl px-7 ml-2">→</span>
+              </div>
+              <div className="mt-2 font-anton text-sm text-white">
+                <span className="text-white">Tila:</span>{' '}
+                {b.status === 'approved' ? (
+                  <span className="text-green-400">Hyväksytty</span>
+                ) : b.status === 'rejected' ? (
+                  <span className="text-red-400">Ei hyväksytty</span>
+                ) : (
+                  <span className="text-white/60">Odotetaan vastausta tekijältä</span>
+                )}
+              </div>
+              {(b.status === 'approved' || b.status === 'pending') && !b.paymentCompleted && (
+                <div className="mt-4 flex justify-between items-center gap-4">
+                  {b.status === 'approved' && (
+                    <motion.button
+                      whileTap={{ scale: 0.95 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedBooking(b);
+                        setShowPaymentModal(true);
+                      }}
+                      className="bg-green-600 hover:bg-green-700 text-white px-10 py-2 rounded flex items-center justify-center gap-2"
+                      disabled={paying}
+                    >
+                      {paying && selectedBooking?.id === b.id ? (
+                        <>
+                          <span className="spinner w-5 h-5 border-2 border-t-transparent border-white mr-2" />
+                          Maksamassa...
+                        </>
+                      ) : 'Maksa varaus'}
+                    </motion.button>
+                  )}
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedBooking(b);
-                      setShowPaymentModal(true);
+                      setShowCancelModal(true);
                     }}
-                    className="bg-green-600 hover:bg-green-700 text-white px-10 py-2 rounded"
-                    disabled={paying}
+                    className="text-sm text-red-400 border border-red-400 px-6 py-2 rounded hover:bg-red-400 hover:text-white"
                   >
-                    {paying && selectedBooking?.id === b.id ? 'Maksamassa...' : 'Maksa varaus'}
-                  </button>
-                )}
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedBooking(b);
-                    setShowCancelModal(true);
-                  }}
-                  className="text-sm text-red-400 border border-red-400 px-6 py-2 rounded hover:bg-red-400 hover:text-white"
-                >
-                  Peruuta varaus
-                </button>
-              </div>
-            )}
-          </div>
-        );
-      })}
-
+                    Peruuta varaus
+                  </motion.button>
+                </div>
+              )}
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
       {showCancelModal && selectedBooking && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl p-6 w-full max-w-sm text-black">
@@ -217,7 +263,6 @@ const SentBookingList: React.FC<SentBookingListProps> = ({ selectedId, onSelect 
           </div>
         </div>
       )}
-
       {showPaymentModal && selectedBooking && (
         <ConfirmPaymentModal
           open={true}
@@ -229,12 +274,19 @@ const SentBookingList: React.FC<SentBookingListProps> = ({ selectedId, onSelect 
           onConfirm={handleConfirmPay}
         />
       )}
-
-      {toastMessage && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-white text-black px-6 py-3 rounded-lg shadow-lg z-50">
-          {toastMessage}
-        </div>
-      )}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ duration: 0.4 }}
+            className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-white text-black px-6 py-3 rounded-lg shadow-lg z-50"
+          >
+            {toastMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

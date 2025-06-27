@@ -6,13 +6,14 @@ interface TabsProps {
   activeTab: 'PALVELUT' | 'TARPEET' | 'CONTACTED';
   setActiveTab: (tab: 'PALVELUT' | 'TARPEET' | 'CONTACTED') => void;
   hasUnreadInPalvelutTab: boolean;
+  hasUnreadInTarpeetTab: boolean;
 }
 
 
-const Tabs: React.FC<TabsProps> = ({ activeTab, setActiveTab, hasUnreadInPalvelutTab }) => {
+const Tabs: React.FC<TabsProps> = ({ activeTab, setActiveTab, hasUnreadInPalvelutTab, hasUnreadInTarpeetTab }) => {
   return (
     <div className="flex gap-2 mb-4">
-      {['PALVELUT', 'TARPEET', 'CONTACTED'].map((tab) => {
+      {(['PALVELUT', 'TARPEET', 'CONTACTED'] as const).map((tab) => {
         const label =
           tab === 'PALVELUT'
             ? 'Omat Palvelut'
@@ -20,7 +21,9 @@ const Tabs: React.FC<TabsProps> = ({ activeTab, setActiveTab, hasUnreadInPalvelu
             ? 'Omat Tarpeet'
             : 'Lähetetyt';
 
-        const showRedDot = tab === 'PALVELUT' && hasUnreadInPalvelutTab;
+        const showRedDot = 
+          (tab === 'PALVELUT' && hasUnreadInPalvelutTab) ||
+          (tab === 'TARPEET' && hasUnreadInTarpeetTab);
 
         return (
           <div className="relative" key={tab}>

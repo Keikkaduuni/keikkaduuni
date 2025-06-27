@@ -4,6 +4,8 @@ import axios from 'axios';
 import Papa from 'papaparse';
 import { getToken } from '../utils/token';
 import ReactDOM from 'react-dom';
+import heic2any from 'heic2any';
+import { convertHeicToJpeg, isHeicFile } from '../utils/heicConverter';
 
 const BACKEND_URL = 'http://localhost:5001';
 
@@ -99,7 +101,11 @@ const MuokkaaPalveluModal = ({ palvelu, onClose, onUpdated }) => {
       onClose();
     } catch (err) {
       console.error(err);
-      setError('Palvelun päivitys epäonnistui.');
+      if (err.response?.data?.error) {
+        setError(err.response.data.error);
+      } else {
+        setError('Palvelun päivitys epäonnistui.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -203,7 +209,36 @@ const MuokkaaPalveluModal = ({ palvelu, onClose, onUpdated }) => {
               id="photo-input"
               type="file"
               accept="image/*"
-              onChange={e => setPhoto(e.target.files[0] || null)}
+              onChange={async e => {
+                const file = e.target.files[0] || null;
+                console.log('🔍 File selected:', {
+                  name: file?.name,
+                  type: file?.type,
+                  size: file?.size,
+                  endsWithHeic: file?.name?.endsWith('.heic'),
+                  endsWithHeif: file?.name?.endsWith('.heif'),
+                  isHeicType: file?.type === 'image/heic',
+                  isHeifType: file?.type === 'image/heif'
+                });
+                
+                if (file && isHeicFile(file)) {
+                  console.log('🔄 Attempting HEIC/HEIF conversion...');
+                  const result = await convertHeicToJpeg(file);
+                  
+                  if (result.success && result.file) {
+                    console.log('✅ HEIC/HEIF conversion successful:', result.file.name);
+                    setPhoto(result.file);
+                    setError('');
+                  } else {
+                    console.error('❌ HEIC/HEIF conversion failed:', result.error);
+                    setError(result.error || 'HEIC/HEIF-kuvan muuntaminen epäonnistui.');
+                    setPhoto(null);
+                  }
+                  return;
+                }
+                console.log('📁 Setting regular file:', file?.name);
+                setPhoto(file);
+              }}
               className="hidden"
               required={!previewUrl && !photo}
             />

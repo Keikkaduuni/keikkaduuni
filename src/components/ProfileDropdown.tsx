@@ -2,9 +2,11 @@ import React, { useState, useContext, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { UserCircle, LogOut } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 const ProfileDropdown: React.FC = () => {
   const { logout } = useContext(AuthContext);
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -53,6 +55,14 @@ const ProfileDropdown: React.FC = () => {
         </Link>
 
         <Link
+          to="/my-work"
+          onClick={() => setOpen(false)}
+          className="block px-4 py-2 hover:bg-white hover:text-black transition"
+        >
+          TYÖT
+        </Link>
+
+        <Link
           to="/omat-palvelut"
           onClick={() => setOpen(false)}
           className="block px-4 py-2 hover:bg-white hover:text-black transition"
@@ -67,6 +77,21 @@ const ProfileDropdown: React.FC = () => {
         >
           Omat Tarpeet
         </Link>
+
+        <Link
+          to="/asetukset"
+          onClick={() => setOpen(false)}
+          className="block px-4 py-2 hover:bg-white hover:text-black transition"
+        >
+          Asetukset
+        </Link>
+
+        <button
+          onClick={toggleTheme}
+          className="block w-full px-4 py-2 text-left hover:bg-white hover:text-black transition"
+        >
+          Vaihda teema: {theme === 'light' ? 'Vaalea' : 'Tumma'}
+        </button>
 
         <button
           onClick={handleLogout}

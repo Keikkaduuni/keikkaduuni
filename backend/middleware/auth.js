@@ -19,7 +19,7 @@ export function authenticateToken(req, res, next) {
     if (err) {
       return res.status(403).json({ error: 'Invalid or expired token' });
     }
-    console.log('✅ Authenticated user from token:', user); // 🔍 Add this
+    // console.log('✅ Authenticated user from token:', user); // 🔍 Remove or comment out this log
 
     req.user = user; // Attach decoded token payload to req.user
     next();

@@ -8,6 +8,8 @@ interface OwnListing {
   createdAt: string;
   conversationCount?: number;
   hasUnreadBookings?: boolean;
+  pendingCount?: number;
+  hasUnreadOffers?: boolean;
 }
 
 interface Props {
@@ -40,11 +42,16 @@ const OwnListingList: React.FC<Props> = ({ listings, onSelect, selectedId }) => 
                 className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full"
               />
             )}
+            {item.hasUnreadOffers && (
+              <span
+                title="Uusi tarjous"
+                className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full"
+              />
+            )}
             <img
-              src={item.image || '/default-thumbnail.png'}
-              onError={(e) => (e.currentTarget.src = '/default-thumbnail.png')}
-              className="w-12 h-12 rounded-xl object-cover"
-              alt={item.title || 'Listing'}
+              src={item.image || '/default-thumbnail.svg'}
+              alt={item.title}
+              className="w-16 h-16 object-cover rounded-lg"
             />
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
@@ -59,6 +66,12 @@ const OwnListingList: React.FC<Props> = ({ listings, onSelect, selectedId }) => 
                 <span className="text-white/40 text-xs">
                   {item.conversationCount} keskustelu
                   {item.conversationCount === 1 ? '' : 'a'}
+                </span>
+              )}
+              {item.pendingCount !== undefined && item.pendingCount > 0 && (
+                <span className="text-white/40 text-xs">
+                  {item.pendingCount} tarjous
+                  {item.pendingCount === 1 ? '' : 'ta'}
                 </span>
               )}
             </div>

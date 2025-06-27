@@ -28,6 +28,10 @@ router.post('/booking/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Booking not found.' });
     }
 
+    if (!booking.palvelu) {
+      return res.status(400).json({ error: 'Palvelu for this booking not found or has been deleted.' });
+    }
+
     if (booking.userId !== req.user.id) {
       return res.status(403).json({ error: 'Not authorized to pay for this booking.' });
     }
@@ -36,7 +40,7 @@ router.post('/booking/:id', authenticateToken, async (req, res) => {
       return res.status(409).json({ error: 'Booking already paid.' });
     }
 
-    if (!booking.palvelu?.userId) {
+    if (!booking.palvelu.userId) {
       return res.status(400).json({ error: 'Palvelulla ei ole omistajaa.' });
     }
 
@@ -58,21 +62,22 @@ router.post('/booking/:id', authenticateToken, async (req, res) => {
 
     // 🧱 Create conversation if not found
     if (!conversation) {
+      const now = new Date();
       conversation = await prisma.conversation.create({
         data: {
           palveluId: booking.palveluId,
-          participants: {
-            create: [
-              { userId: booking.userId },
-              { userId: booking.palvelu.userId },
-            ],
-          },
         },
+      });
+      await prisma.conversationParticipant.createMany({
+        data: [
+          { userId: booking.userId, conversationId: conversation.id, lastSeenAt: now },
+          { userId: booking.palvelu.userId, conversationId: conversation.id, lastSeenAt: now },
+        ],
       });
     }
 
     // 🔔 Notify provider
-    await prisma.notification.create({
+    const notification = await prisma.notification.create({
       data: {
         userId: booking.palvelu.userId,
         type: 'bookingPaid',
@@ -81,10 +86,24 @@ router.post('/booking/:id', authenticateToken, async (req, res) => {
       },
     });
 
+    // Emit real-time notification
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user-${booking.palvelu.userId}`).emit('new-notification', notification);
+    }
+
     return res.json({ conversationId: conversation.id });
 
   } catch (err) {
     console.error('❌ Booking payment failed:', err);
+    if (typeof booking !== 'undefined') {
+      console.error('Booking object at error:', booking);
+      if (booking && typeof booking.palvelu === 'undefined') {
+        console.error('Booking.palvelu is undefined!');
+      } else if (booking && booking.palvelu) {
+        console.error('Booking.palvelu:', booking.palvelu);
+      }
+    }
     return res.status(500).json({ error: 'Could not complete booking payment.' });
   }
 });

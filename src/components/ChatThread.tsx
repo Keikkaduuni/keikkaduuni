@@ -11,6 +11,10 @@ import {
 import { getSocket } from '../socket';
 import { getTokenPayload } from '../utils/auth';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { markConversationAsRead } from '../api/conversations';
+import heic2any from 'heic2any';
+import { convertHeicToJpeg, isHeicFile } from '../utils/heicConverter';
 
 
 
@@ -458,10 +462,23 @@ useEffect(() => {
           accept="image/*"
           multiple
           className="hidden"
-          onChange={(e) => {
+          onChange={async (e) => {
             const selected = Array.from(e.target.files || []);
-            if (selected.length > 0)
-              setFiles((prev) => [...prev, ...selected]);
+            const processed = await Promise.all(selected.map(async (file) => {
+              if (file && isHeicFile(file)) {
+                console.log('🔄 ChatThread - Attempting HEIC/HEIF conversion for:', file.name);
+                const result = await convertHeicToJpeg(file);
+                if (result.success && result.file) {
+                  console.log('✅ ChatThread - HEIC/HEIF conversion successful:', result.file.name);
+                  return result.file;
+                } else {
+                  console.error('❌ ChatThread - HEIC/HEIF conversion failed:', result.error);
+                  return null;
+                }
+              }
+              return file;
+            }));
+            setFiles(prev => [...prev, ...processed.filter(Boolean)]);
           }}
         />
       </label>

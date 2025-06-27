@@ -7,7 +7,6 @@ const ChatThreadPage = () => {
 
   useEffect(() => {
     if (id) {
-      sessionStorage.setItem('showMobileThread', 'true');
       sessionStorage.setItem('selectedConversationId', id);
       sessionStorage.setItem('cameFromChatThreadPage', 'true'); // ✅ ADD THIS
       window.location.replace('/viestit');

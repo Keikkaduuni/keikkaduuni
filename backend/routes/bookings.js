@@ -72,6 +72,21 @@ router.post('/:bookingId/approve', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Not allowed' });
     }
     await prisma.booking.update({ where: { id }, data: { status: 'approved' } });
+
+    // Notify booker
+    const notification = await prisma.notification.create({
+      data: {
+        userId: booking.userId,
+        type: 'bookingApproved',
+        message: 'Varauspyyntösi hyväksyttiin.',
+        link: `/palvelut/${booking.palveluId}`,
+      },
+    });
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user-${booking.userId}`).emit('new-notification', notification);
+    }
+
     res.sendStatus(204);
   } catch (err) {
     console.error('Approve booking error', err);
@@ -88,6 +103,21 @@ router.post('/:bookingId/reject', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Not allowed' });
     }
     await prisma.booking.update({ where: { id }, data: { status: 'rejected' } });
+
+    // Notify booker
+    const notification = await prisma.notification.create({
+      data: {
+        userId: booking.userId,
+        type: 'bookingRejected',
+        message: 'Varauspyyntösi hylättiin.',
+        link: `/palvelut/${booking.palveluId}`,
+      },
+    });
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user-${booking.userId}`).emit('new-notification', notification);
+    }
+
     res.sendStatus(204);
   } catch (err) {
     console.error('Reject booking error', err);
@@ -131,7 +161,7 @@ router.get('/sent', authenticateToken, async (req, res) => {
     console.log('📥 GET /bookings/sent for user:', userId);
 
     const bookings = await prisma.booking.findMany({
-      where: { userId },
+      where: { userId, paymentCompleted: false },
       include: {
         palvelu: {
           select: { id: true, title: true, unit: true }
@@ -170,7 +200,105 @@ router.get('/sent', authenticateToken, async (req, res) => {
   }
 });
 
+// Get received bookings (bookings for services owned by current user)
+router.get('/received', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log('📥 GET /bookings/received for user:', userId);
 
+    // Get all palvelut owned by the current user
+    const userPalvelut = await prisma.palvelu.findMany({
+      where: { userId },
+      select: { id: true }
+    });
+
+    const palveluIds = userPalvelut.map(p => p.id);
+
+    if (palveluIds.length === 0) {
+      return res.json([]);
+    }
+
+    const bookings = await prisma.booking.findMany({
+      where: { 
+        palveluId: { in: palveluIds }
+      },
+      include: {
+        user: { select: { id: true, name: true, profilePhoto: true } },
+        palvelu: { select: { id: true, title: true, unit: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    console.log(`✅ Found ${bookings.length} received bookings for user ${userId}`);
+
+    res.json(bookings.map((b) => ({
+      id: b.id,
+      palveluId: b.palvelu.id,
+      palveluTitle: b.palvelu.title,
+      date: b.date,
+      hours: b.hours,
+      status: b.status,
+      unit: b.palvelu.unit,
+      createdAt: b.createdAt,
+      isRead: b.isRead,
+      userId: b.user.id,
+      userName: b.user.name,
+      userProfilePhoto: b.user.profilePhoto,
+      paymentCompleted: b.paymentCompleted
+    })));
+  } catch (err) {
+    console.error('❌ Fetch received bookings error:', err);
+    res.status(500).json({ error: 'Failed to load received bookings' });
+  }
+});
+
+// Complete booking
+router.patch('/:bookingId/complete', authenticateToken, async (req, res) => {
+  try {
+    const id = req.params.bookingId;
+    const booking = await prisma.booking.findUnique({
+      where: { id },
+      include: { palvelu: true }
+    });
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+    // Only provider or client can complete
+    if (
+      booking.userId !== req.user.id &&
+      booking.palvelu.userId !== req.user.id
+    ) {
+      return res.status(403).json({ error: 'Not allowed' });
+    }
+    if (booking.status === 'completed') {
+      return res.status(400).json({ error: 'Booking already completed' });
+    }
+    const updated = await prisma.booking.update({
+      where: { id },
+      data: { status: 'completed' }
+    });
+
+    // Notify the other party
+    const otherUserId = booking.userId === req.user.id ? booking.palvelu.userId : booking.userId;
+    const notification = await prisma.notification.create({
+      data: {
+        userId: otherUserId,
+        type: 'bookingCompleted',
+        message: 'Varaus on merkitty valmiiksi.',
+        link: `/palvelut/${booking.palveluId}`,
+      },
+    });
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user-${otherUserId}`).emit('new-notification', notification);
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error('Complete booking error', err);
+    res.status(500).json({ error: 'Could not complete booking' });
+  }
+});
 
 router.delete('/:id', authenticateToken, async (req, res) => {
   const bookingId = req.params.id;
@@ -179,14 +307,33 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
+      include: { palvelu: true },
     });
 
     if (!booking || booking.userId !== userId) {
       return res.status(403).json({ error: 'Not authorized to delete this booking.' });
     }
 
-    // Optional: delete related conversation if one exists
     await prisma.booking.delete({ where: { id: bookingId } });
+
+    // ✅ Emit socket event for real-time updates
+    const io = req.app.get('io');
+    if (io) {
+      // Notify all connected clients about the deletion
+      io.emit('booking-deleted', bookingId);
+      
+      // Notify provider about cancellation
+      const notification = await prisma.notification.create({
+        data: {
+          userId: booking.palvelu.userId,
+          type: 'bookingCancelled',
+          message: 'Varaus peruutettiin.',
+          link: `/palvelut/${booking.palveluId}`,
+        },
+      });
+      
+      io.to(`user-${booking.palvelu.userId}`).emit('new-notification', notification);
+    }
 
     res.json({ success: true });
   } catch (err) {
@@ -195,6 +342,27 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-
+// Get all bookings for a specific service (palveluId)
+router.get('/palvelu/:palveluId', authenticateToken, async (req, res) => {
+  const palveluId = parseInt(req.params.palveluId);
+  const userId = req.user.id;
+  try {
+    const palvelu = await prisma.palvelu.findUnique({ where: { id: palveluId } });
+    if (!palvelu || palvelu.userId !== userId) {
+      return res.status(403).json({ error: 'Not allowed' });
+    }
+    const bookings = await prisma.booking.findMany({
+      where: { palveluId },
+      include: {
+        user: { select: { id: true, name: true, profilePhoto: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(bookings);
+  } catch (err) {
+    console.error('Error loading bookings for palvelu:', err);
+    res.status(500).json({ error: 'Could not load bookings' });
+  }
+});
 
 export default router;

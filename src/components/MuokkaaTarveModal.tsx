@@ -4,6 +4,8 @@ import { getToken } from '../utils/token';
 import Papa from 'papaparse';
 import axios from 'axios';
 import ReactDOM from 'react-dom';
+import heic2any from 'heic2any';
+import { convertHeicToJpeg, isHeicFile } from '../utils/heicConverter';
 
 const BACKEND_URL = 'http://localhost:5001';
 
@@ -169,7 +171,25 @@ const MuokkaaTarveModal = ({ tarve, onClose, onUpdated }) => {
               id="photo-input"
               type="file"
               accept="image/*"
-              onChange={e => setPhoto(e.target.files[0] || null)}
+              onChange={async e => {
+                const file = e.target.files[0] || null;
+                if (file && isHeicFile(file)) {
+                  console.log('🔄 MuokkaaTarveModal - Attempting HEIC/HEIF conversion...');
+                  const result = await convertHeicToJpeg(file);
+                  
+                  if (result.success && result.file) {
+                    console.log('✅ MuokkaaTarveModal - HEIC/HEIF conversion successful:', result.file.name);
+                    setPhoto(result.file);
+                    setFieldErrors({ ...fieldErrors, photo: '' });
+                  } else {
+                    console.error('❌ MuokkaaTarveModal - HEIC/HEIF conversion failed:', result.error);
+                    setFieldErrors({ ...fieldErrors, photo: result.error || 'HEIC/HEIF-kuvan muuntaminen epäonnistui.' });
+                    setPhoto(null);
+                  }
+                  return;
+                }
+                setPhoto(file);
+              }}
               className="hidden"
             />
             <label

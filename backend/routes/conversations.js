@@ -90,6 +90,98 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 /**
+ * GET /api/conversations/booking/:bookingId
+ * Find conversation for a specific booking
+ */
+router.get('/booking/:bookingId', authenticateToken, async (req, res) => {
+  const bookingId = req.params.bookingId;
+  const currentUserId = req.user.id;
+
+  try {
+    // First find the booking to get the palveluId
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { palvelu: true },
+    });
+
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    // Check if user is authorized (either the booking owner or the service provider)
+    if (booking.userId !== currentUserId && booking.palvelu.userId !== currentUserId) {
+      return res.status(403).json({ error: 'Not authorized to access this booking' });
+    }
+
+    // Find conversation for this palvelu
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        palveluId: booking.palveluId,
+        participants: {
+          some: { userId: currentUserId, deleted: false },
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found for this booking' });
+    }
+
+    return res.json({ conversationId: conversation.id });
+  } catch (error) {
+    console.error('Error finding conversation for booking:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/conversations/offer/:offerId
+ * Find conversation for a specific offer
+ */
+router.get('/offer/:offerId', authenticateToken, async (req, res) => {
+  const offerId = parseInt(req.params.offerId);
+  const currentUserId = req.user.id;
+
+  try {
+    // First find the offer to get the tarveId
+    const offer = await prisma.offer.findUnique({
+      where: { id: offerId },
+      include: { tarve: true },
+    });
+
+    if (!offer) {
+      return res.status(404).json({ error: 'Offer not found' });
+    }
+
+    // Check if user is authorized (either the offer sender or the need owner)
+    if (offer.userId !== currentUserId && offer.tarve.userId !== currentUserId) {
+      return res.status(403).json({ error: 'Not authorized to access this offer' });
+    }
+
+    // Find conversation for this tarve
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        tarveId: offer.tarveId,
+        participants: {
+          some: { userId: currentUserId, deleted: false },
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found for this offer' });
+    }
+
+    return res.json({ conversationId: conversation.id });
+  } catch (error) {
+    console.error('Error finding conversation for offer:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * POST /api/conversations
  * Create a new conversation (or retrieve if it already exists),
  * tied to exactly one Palvelu or one Tarve.

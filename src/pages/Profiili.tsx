@@ -1,14 +1,16 @@
 import React, { useContext, useState, useEffect, useRef } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import Modal from '../components/Modal';
-import { Settings } from 'lucide-react';
+import { Settings, Wrench } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import { BACKEND_URL } from '../config';
 
 interface User {
   name?: string;
   email?: string;
   description?: string;
-  skills?: string[];
+  skills?: string[] | string;
   profilePhoto?: string;
   companyName?: string;
   palvelut?: { id: string; title: string; description: string }[];
@@ -93,7 +95,7 @@ const Profiili: React.FC = () => {
       }
 
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const response = await fetch('http://localhost:5001/api/profile', {
+      const response = await fetch(`${BACKEND_URL}/api/profile`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -114,8 +116,14 @@ const Profiili: React.FC = () => {
     !photoError && profileData.profilePhoto
       ? profileData.profilePhoto.startsWith('http')
         ? profileData.profilePhoto
-        : `http://localhost:5001${profileData.profilePhoto}`
+        : `${BACKEND_URL}${profileData.profilePhoto}`
       : null;
+
+  // Add error handling for image loading
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    console.error('❌ Profile image failed to load:', e.currentTarget.src);
+    e.currentTarget.src = '/default-avatar.svg';
+  };
 
   if (!user) return <p>Ladataan profiilia...</p>;
 
@@ -123,14 +131,26 @@ const Profiili: React.FC = () => {
     <div className="max-w-6xl mx-auto p-6">
       <header className="flex justify-between items-center mb-8">
         <h1 className="text-4xl font-bold uppercase tracking-widest">PROFIILISI</h1>
-        <button
-          onClick={() => setModalOpen(true)}
-          aria-label="Asetukset"
-          className="flex items-center gap-2 p-2 rounded hover:bg-white/10 transition"
-        >
-          <Settings className="w-6 h-6" />
-          <span className="uppercase font-semibold text-sm">Muokkaa tietojasi</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/asetukset"
+            className="inline-block mb-4 px-4 py-2 rounded-lg border border-gray-300 dark:border-white/20 bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white font-medium transition"
+          >
+            Asetukset
+          </Link>
+          <button
+            onClick={() => setModalOpen(true)}
+            aria-label="Asetukset"
+            className="flex items-center gap-2 p-2 rounded hover:bg-white/10 transition"
+          >
+            <Settings className="w-6 h-6" />
+            <span className="uppercase font-semibold text-sm">Muokkaa tietojasi</span>
+          </button>
+          <Link to="/my-work" className="flex items-center gap-2 p-2 rounded hover:bg-white/10 transition">
+            <Wrench className="w-6 h-6" />
+            <span className="uppercase font-semibold text-sm">TYÖT</span>
+          </Link>
+        </div>
       </header>
 
       <AnimatePresence>
@@ -148,7 +168,7 @@ const Profiili: React.FC = () => {
                 <img
                   src={resolvedPhoto}
                   alt="Profiilikuva"
-                  onError={() => setPhotoError(true)}
+                  onError={handleImageError}
                   className="w-full h-full object-cover"
                 />
               ) : (

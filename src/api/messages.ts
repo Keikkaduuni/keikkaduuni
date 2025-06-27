@@ -1,6 +1,7 @@
 import axios from 'axios';
+import { BACKEND_URL } from '../config';
 
-const API_ROOT = 'http://localhost:5001';
+const API_ROOT = BACKEND_URL;
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token') || sessionStorage.getItem('token');

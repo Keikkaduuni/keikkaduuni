@@ -10,9 +10,13 @@ import {
   MessageCircle,
   Home as HomeIcon,
   UserCircle as UserIcon,
-  LogOut
+  LogOut,
+  Wrench
 } from 'lucide-react';
 import logo from '../assets/Logo.png';
+import { fetchNotifications, markNotificationAsRead, deleteNotification } from '../api/notifications';
+import { getSocket } from '../socket';
+import BottomNavBar from './BottomNavBar';
 
 const Layout: React.FC = () => {
   const { isAuthenticated, logout } = useContext(AuthContext);
@@ -22,13 +26,130 @@ const Layout: React.FC = () => {
   const [showProfileDropdownMobile, setShowProfileDropdownMobile] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+  const [hasUnreadWork, setHasUnreadWork] = useState(false);
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+  const [showTypeModal, setShowTypeModal] = useState(false);
 
-  const hasUnreadMessages = true;
-  const notifications = [
-    { id: 1, message: 'Uusi varauspyyntö saapui' },
-    { id: 2, message: 'Arvostelu julkaistiin' },
-  ];
   const isChatPage = location.pathname.startsWith('/viestit');
+
+  useEffect(() => {
+    if (!isLoggedIn || !token) return;
+    const socket = getSocket();
+    if (!socket) return;
+    const handleNewNotification = () => {
+      fetchNotifications(token).then((data) => {
+        console.log('🔔 Socket notification update:', data);
+        setNotifications(data);
+        const hasUnread = data.some((n: any) => !n.isRead);
+        console.log('🔔 Has unread notifications:', hasUnread);
+        setHasUnreadNotifications(hasUnread);
+      });
+    };
+    socket.on('new-notification', handleNewNotification);
+    return () => {
+      socket.off('new-notification', handleNewNotification);
+    };
+  }, [isLoggedIn, token]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !token) return;
+    const socket = getSocket();
+    if (!socket) return;
+    
+    const handleWorkUpdate = () => {
+      // Refetch work data to update unread badges
+      Promise.all([
+        fetch('http://localhost:5001/api/bookings/received', { headers: { Authorization: `Bearer ${token}` } }).then(res => res.json()),
+        fetch('http://localhost:5001/api/offers/received', { headers: { Authorization: `Bearer ${token}` } }).then(res => res.json()),
+      ]).then(([bookings, offers]) => {
+        setHasUnreadWork(
+          (bookings && bookings.some((b: any) => !b.isRead)) ||
+          (offers && offers.some((o: any) => !o.isRead))
+        );
+      });
+    };
+
+    socket.on('booking-updated', handleWorkUpdate);
+    socket.on('offer-updated', handleWorkUpdate);
+    socket.on('new-notification', handleWorkUpdate);
+
+    return () => {
+      socket.off('booking-updated', handleWorkUpdate);
+      socket.off('offer-updated', handleWorkUpdate);
+      socket.off('new-notification', handleWorkUpdate);
+    };
+  }, [isLoggedIn, token]);
+
+  // ✅ Add initial useEffect to load notifications on mount
+  useEffect(() => {
+    if (!isLoggedIn || !token) return;
+    
+    // Load initial notifications
+    fetchNotifications(token).then((data) => {
+      console.log('🔔 Initial notifications loaded:', data);
+      data.forEach((notification: any, index: number) => {
+        console.log(`🔔 Notification ${index + 1}:`, {
+          id: notification.id,
+          message: notification.message,
+          isRead: notification.isRead,
+          type: notification.type,
+          createdAt: notification.createdAt
+        });
+      });
+      setNotifications(data);
+      const hasUnread = data.some((n: any) => !n.isRead);
+      console.log('🔔 Initial has unread notifications:', hasUnread);
+      setHasUnreadNotifications(hasUnread);
+    }).catch(err => {
+      console.error('Failed to load initial notifications:', err);
+      setHasUnreadNotifications(false);
+    });
+  }, [isLoggedIn, token]);
+
+  const handleNotifDropdown = async () => {
+    setShowNotifDropdown((prev) => !prev);
+    if (!showNotifDropdown && notifications.some((n) => !n.isRead) && token) {
+      console.log('🔔 Marking all notifications as read...');
+      // Mark all as read
+      await Promise.all(
+        notifications.filter((n) => !n.isRead).map((n) => markNotificationAsRead(n.id, token))
+      );
+      // Refetch
+      const data = await fetchNotifications(token);
+      console.log('🔔 After marking as read:', data);
+      setNotifications(data);
+      const hasUnread = data.some((n: any) => !n.isRead);
+      console.log('🔔 Has unread after marking:', hasUnread);
+      setHasUnreadNotifications(hasUnread);
+    }
+  };
+
+  // ✅ Add temporary manual mark-as-read function
+  const handleMarkAllAsRead = async () => {
+    if (!token) return;
+    console.log('🔔 Manually marking all as read...');
+    try {
+      await Promise.all(
+        notifications.filter((n) => !n.isRead).map((n) => markNotificationAsRead(n.id, token))
+      );
+      const data = await fetchNotifications(token);
+      console.log('🔔 After manual mark as read:', data);
+      setNotifications(data);
+      setHasUnreadNotifications(data.some((n: any) => !n.isRead));
+    } catch (error) {
+      console.error('Failed to mark notifications as read:', error);
+    }
+  };
+
+  const handleDeleteNotification = async (id: string) => {
+    if (!token) return;
+    await deleteNotification(id, token);
+    const data = await fetchNotifications(token);
+    setNotifications(data);
+    setHasUnreadNotifications(data.some((n: any) => !n.isRead));
+  };
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -65,9 +186,19 @@ const Layout: React.FC = () => {
             </Link>
 
             {isLoggedIn && (
+              <Link to="/my-work" className="relative flex items-center">
+                <Wrench className="w-6 h-6 text-white" />
+                {hasUnreadWork && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />
+                )}
+                <span className="ml-2 uppercase">Työt</span>
+              </Link>
+            )}
+
+            {isLoggedIn && (
               <Link to="/viestit" className="relative flex items-center">
                 <MessageCircle className="w-6 h-6 text-white" />
-                {hasUnreadMessages && (
+                {hasUnreadNotifications && (
                   <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />
                 )}
                 <span className="ml-2 uppercase">Viestit</span>
@@ -77,26 +208,15 @@ const Layout: React.FC = () => {
             {isLoggedIn && (
               <div ref={notifRef} className="relative flex items-center">
                 <button
-                  onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+                  onClick={handleNotifDropdown}
                   className="flex items-center"
                 >
                   <Bell className="w-6 h-6 text-white" />
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />
+                  {hasUnreadNotifications && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />
+                  )}
                   <span className="ml-2 uppercase">Ilmoitukset</span>
                 </button>
-                {showNotifDropdown && (
-                  <div className="absolute top-full mt-1 right-0 w-64 bg-white text-black rounded-xl shadow-lg z-50 overflow-hidden uppercase divide-y divide-gray-200">
-                    <div className="p-3 font-semibold">Ilmoitukset</div>
-                    {notifications.length === 0
-                      ? <div className="p-3 text-sm text-gray-500">Ei ilmoituksia vielä.</div>
-                      : notifications.map(n => (
-                          <div key={n.id} className="p-3 text-sm hover:bg-gray-100">
-                            {n.message}
-                          </div>
-                        ))
-                    }
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -114,102 +234,17 @@ const Layout: React.FC = () => {
             )}
           </div>
         </div>
+      </header>
 
-        {/* Mobile nav (icons + labels) */}
-        <div className="flex sm:hidden justify-around items-center border-b border-white/10 bg-black">
-          {/* Home */}
-          <Link to="/" className="flex flex-col items-center py-2">
-            <HomeIcon className="w-6 h-6 text-white" />
-            <span className="text-xs mt-1 uppercase">Etusivu</span>
-          </Link>
-
-          {/* Messages */}
-          {isLoggedIn && (
-            <Link to="/viestit" className="flex flex-col items-center py-2">
-              <div className="relative">
-                <MessageCircle className="w-6 h-6 text-white" />
-                {hasUnreadMessages && (
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />
-                )}
-              </div>
-              <span className="text-xs mt-1 uppercase">Viestit</span>
-            </Link>
+      {/* Mobile top header */}
+      <header className="sm:hidden fixed top-0 left-0 right-0 z-50 bg-black flex items-center justify-between px-4 py-3 border-b border-white/10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+        <img src={logo} alt="Keikkaduuni" className="h-7" />
+        <button className="relative">
+          <Bell className="w-7 h-7 text-white" />
+          {hasUnreadNotifications && (
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />
           )}
-
-          {/* Notifications */}
-          {isLoggedIn && (
-            <div ref={notifRef} className="flex flex-col items-center py-2">
-              <button
-                onClick={() => setShowNotifDropdown(!showNotifDropdown)}
-                className="focus:outline-none"
-              >
-                <div className="relative">
-                  <Bell className="w-6 h-6 text-white" />
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />
-                </div>
-              </button>
-              <span className="text-xs mt-1 uppercase">Ilmoitukset</span>
-              {showNotifDropdown && (
-                <div className="absolute top-full mt-1 right-1 w-56 bg-black border border-white/20 rounded shadow-lg z-50 overflow-hidden uppercase divide-y divide-white/20">
-                  {notifications.map(n => (
-                    <div key={n.id} className="px-4 py-2 text-sm hover:bg-white hover:text-black transition">
-                      {n.message}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Profile dropdown trigger (mobile) */}
-          {isLoggedIn && (
-            <div ref={profileRef} className="relative flex flex-col items-center py-2">
-              <button
-                onClick={() => {
-                  setShowProfileDropdownMobile(!showProfileDropdownMobile);
-                  setShowNotifDropdown(false);
-                }}
-                className="focus:outline-none"
-              >
-                <UserIcon className="w-6 h-6 text-white" />
-              </button>
-              <span className="text-xs mt-1 uppercase">Profiili</span>
-
-              {showProfileDropdownMobile && (
-                <div className="absolute top-full mt-1 right-0 w-44 bg-black border border-white/20 rounded shadow-lg z-50 overflow-hidden uppercase divide-y divide-white/20">
-                  <Link
-                    to="/profiili"
-                    onClick={() => setShowProfileDropdownMobile(false)}
-                    className="block px-4 py-2 hover:bg-white hover:text-black transition"
-                  >
-                    Profiili
-                  </Link>
-                  <Link
-                    to="/omat-palvelut"
-                    onClick={() => setShowProfileDropdownMobile(false)}
-                    className="block px-4 py-2 hover:bg-white hover:text-black transition"
-                  >
-                    Omat Palvelut
-                  </Link>
-                  <Link
-                    to="/omat-tarpeet"
-                    onClick={() => setShowProfileDropdownMobile(false)}
-                    className="block px-4 py-2 hover:bg-white hover:text-black transition"
-                  >
-                    Omat Tarpeet
-                  </Link>
-                  <button
-                    onClick={handleLogout}
-                    className="flex items-center w-full text-left px-4 py-2 hover:bg-white hover:text-black transition"
-                  >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Kirjaudu ulos
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        </button>
       </header>
 
       {/* MAIN CONTENT */}
@@ -224,17 +259,39 @@ const Layout: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="bg-white/5 border border-white/10 max-w-6xl mx-auto rounded-2xl shadow-xl">
+          <div className="w-full">
             <Outlet />
           </div>
         )}
       </main>
 
-      {/* FOOTER */}
-      {!isChatPage && (
-        <footer className="text-center text-sm text-white/50 py-6 uppercase">
-          © {new Date().getFullYear()} Keikkaduuni. All rights reserved.
-        </footer>
+      {/* Bottom navigation bar for mobile */}
+      <div style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <BottomNavBar onClickUusi={() => setShowTypeModal(true)} />
+      </div>
+
+      {showNotifDropdown && (
+        <div className="absolute top-full mt-1 right-0 w-64 bg-white text-black rounded-xl shadow-lg z-50 overflow-hidden uppercase divide-y divide-gray-200">
+          <div className="p-3 font-semibold">Ilmoitukset</div>
+          {notifications.length === 0
+            ? <div className="p-3 text-sm text-gray-500">Ei ilmoituksia vielä.</div>
+            : notifications.map(n => (
+                <div key={n.id} className="flex items-center justify-between p-3 text-sm hover:bg-gray-100">
+                  <span className={n.isRead ? 'text-gray-500' : 'font-bold'}>{n.message}</span>
+                  <button
+                    onClick={() => handleDeleteNotification(n.id)}
+                    className="ml-2 text-red-500 hover:text-red-700 text-xs uppercase"
+                    title="Poista ilmoitus"
+                  >
+                    Poista
+                  </button>
+                </div>
+              ))
+          }
+          <div className="p-2 border-t text-center bg-gray-50">
+            <Link to="/ilmoitukset" className="text-xs text-blue-600 hover:underline">Näytä kaikki ilmoitukset</Link>
+          </div>
+        </div>
       )}
     </div>
   );

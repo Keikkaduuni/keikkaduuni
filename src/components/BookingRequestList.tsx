@@ -24,13 +24,11 @@ const BookingRequestList: React.FC<BookingRequestListProps> = ({ requests, onAll
        const { getToken } = useAuth(); // ✅ Hook here
 
        const [localRequests, setLocalRequests] = React.useState<BookingRequest[]>(requests);
+       const [error, setError] = React.useState<string | null>(null);
 
    React.useEffect(() => {
   setLocalRequests(requests); // keep local state in sync when parent updates
     }, [requests]);
-
-
-
 
   React.useEffect(() => {
     const unreadStillExist = localRequests.some(
@@ -42,10 +40,30 @@ const BookingRequestList: React.FC<BookingRequestListProps> = ({ requests, onAll
     }
   }, [requests, onAllRead]);
 
-  if (requests.length === 0) {
+  React.useEffect(() => {
+    const fetchRequests = async () => {
+      setError(null);
+      try {
+        // ... existing code ...
+      } catch (err) {
+        setError('Varauspyyntöjen haku epäonnistui');
+      }
+    };
+    fetchRequests();
+  }, [/* dependencies */]);
+
+  if (error) {
     return (
-      <div className="text-white/60 text-center py-10">
-        Ei varauspyyntöjä vielä
+      <div className="fixed z-50 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg animate-slide-in left-1/2 -translate-x-1/2 bottom-4 w-[90vw] max-w-sm">
+        {error}
+      </div>
+    );
+  }
+
+  if (!localRequests || localRequests.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-white/40 text-sm pt-20">
+        <span>Ei varauspyyntöjä vielä</span>
       </div>
     );
   }

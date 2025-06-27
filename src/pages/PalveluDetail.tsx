@@ -11,14 +11,12 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { useLocation } from 'react-router-dom';
 import { getToken } from '../utils/token';
 import MuokkaaPalveluModal from '../components/MuokkaaPalveluModal';
+import { BACKEND_URL } from '../config';
 
 
 
 
 
-
-
-const BACKEND_URL = 'http://localhost:5001';
 
 
 const PalveluDetail = () => {
@@ -53,6 +51,7 @@ const PalveluDetail = () => {
   const [bookingErrorToast, setBookingErrorToast] = useState('');
   const [showBookingCancelledToast, setShowBookingCancelledToast] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
 
 
@@ -292,7 +291,10 @@ return (
         )}
 
         {showUpdateToast && (
-          <div className="fixed top-6 right-6 z-50 bg-green-600 text-white px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 animate-fade-in">
+          <div className={
+            'fixed z-50 bg-green-600 text-white px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 animate-fade-in ' +
+            (isMobile ? 'left-1/2 -translate-x-1/2 bottom-4 w-[90vw] max-w-sm' : 'top-6 right-6')
+          }>
             <span>Palvelu päivitetty onnistuneesti!</span>
             <button onClick={() => setShowUpdateToast(false)} className="text-white font-bold">×</button>
           </div>
@@ -756,27 +758,29 @@ return (
 
             {/* ✅ Top-right toast: Booking Success */}
       {showBookingSuccessToast && (
-        <div className="fixed top-6 right-6 z-50">
-          <div className="bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in">
-            <span>Varauspyyntö lähetetty onnistuneesti!</span>
-            <button onClick={() => setShowBookingSuccessToast(false)} className="text-white text-lg leading-none">×</button>
-          </div>
+        <div className={
+          'fixed z-50 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in ' +
+          (isMobile ? 'left-1/2 -translate-x-1/2 bottom-4 w-[90vw] max-w-sm' : 'top-6 right-6')
+        }>
+          <span>Varauspyyntö lähetetty onnistuneesti!</span>
+          <button onClick={() => setShowBookingSuccessToast(false)} className="text-white text-lg leading-none">×</button>
         </div>
       )}
 
       {showBookingCancelledToast && (
-  <div className="fixed top-6 right-6 z-50">
-    <div className="bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in">
-      <span>Varauspyyntö peruttu</span>
-      <button
-        onClick={() => setShowBookingCancelledToast(false)}
-        className="text-white text-lg leading-none"
-      >
-        ×
-      </button>
-    </div>
-  </div>
-)}
+        <div className={
+          'fixed z-50 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in ' +
+          (isMobile ? 'left-1/2 -translate-x-1/2 bottom-4 w-[90vw] max-w-sm' : 'top-6 right-6')
+        }>
+          <span>Varauspyyntö peruttu</span>
+          <button
+            onClick={() => setShowBookingCancelledToast(false)}
+            className="text-white text-lg leading-none"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
     </div>
   );

@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import axios from 'axios';
 import { useContext } from 'react';
+import { BACKEND_URL } from '../config';
 
 interface User {
   id: string;
@@ -10,6 +11,7 @@ interface User {
   skills?: string[];
   profilePhoto?: string;
   companyName?: string;
+  createdAt?: string;
 }
 
 interface AuthContextType {
@@ -31,6 +33,7 @@ const AuthContext = createContext<AuthContextType>({
   logout: () => {},
   isAuthenticated: false,
   fetchUser: async () => {},
+  getToken: () => null,
 });
 
 const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -50,6 +53,7 @@ const AuthProvider = ({ children }: { children: ReactNode }) => {
         : [],
       profilePhoto: raw.profilePhoto || undefined,
       companyName: raw.companyName || '',
+      createdAt: raw.createdAt || undefined,
     };
   };
 
@@ -59,7 +63,7 @@ const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.getItem('token') || sessionStorage.getItem('token');
       if (!currentToken) return;
 
-      const res = await axios.get('http://localhost:5001/api/profile', {
+      const res = await axios.get(`${BACKEND_URL}/api/profile`, {
         headers: { Authorization: `Bearer ${currentToken}` },
         withCredentials: true,
       });

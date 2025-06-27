@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, MessageCircle } from 'lucide-react';
+import { Bell, MessageCircle, Wrench } from 'lucide-react';
+import { fetchNotifications, markNotificationAsRead, deleteNotification } from '../api/notifications';
 
 interface HeaderProps {
   isLoggedIn: boolean;
@@ -9,13 +10,39 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ isLoggedIn }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
 
-  // ⬇️ Replace this with your actual logic later
-  const hasUnreadMessages = true;
-  const notifications = [
-    { id: 1, message: 'Uusi varauspyyntö saapui.' },
-    { id: 2, message: 'Arvostelu vastaanotettu.' },
-  ];
+  useEffect(() => {
+    if (!isLoggedIn || !token) return;
+    fetchNotifications(token).then((data) => {
+      setNotifications(data);
+      setHasUnreadNotifications(data.some((n: any) => !n.isRead));
+    });
+  }, [isLoggedIn, token]);
+
+  const handleNotifDropdown = async () => {
+    setShowNotifDropdown((prev) => !prev);
+    if (!showNotifDropdown && notifications.some((n) => !n.isRead) && token) {
+      // Mark all as read
+      await Promise.all(
+        notifications.filter((n) => !n.isRead).map((n) => markNotificationAsRead(n.id, token))
+      );
+      // Refetch
+      const data = await fetchNotifications(token);
+      setNotifications(data);
+      setHasUnreadNotifications(data.some((n: any) => !n.isRead));
+    }
+  };
+
+  const handleDeleteNotification = async (id: string) => {
+    if (!token) return;
+    await deleteNotification(id, token);
+    const data = await fetchNotifications(token);
+    setNotifications(data);
+    setHasUnreadNotifications(data.some((n: any) => !n.isRead));
+  };
 
   return (
     <header className="sticky top-0 bg-black border-b border-gray-800 py-4 px-6 flex items-center justify-between z-50">
@@ -41,16 +68,24 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn }) => {
             <div className="relative">
               <Link to="/viestit">
                 <MessageCircle className="w-6 h-6 text-white" />
-                {hasUnreadMessages && (
-                  <span className="absolute top-0 right-0 block w-2.5 h-2.5 bg-red-500 rounded-full" />
-                )}
+              </Link>
+            </div>
+
+            {/* My Work icon */}
+            <div className="relative">
+              <Link to="/my-work" className="flex items-center gap-2 hover:opacity-80 transition">
+                <Wrench className="w-6 h-6 text-white" />
+                <span className="text-white font-semibold uppercase text-sm">TYÖT</span>
               </Link>
             </div>
 
             {/* Notifications bell */}
             <div className="relative">
-              <button onClick={() => setShowNotifDropdown(!showNotifDropdown)}>
+              <button onClick={handleNotifDropdown}>
                 <Bell className="w-6 h-6 text-white" />
+                {hasUnreadNotifications && (
+                  <span className="absolute top-0 right-0 block w-2.5 h-2.5 bg-red-500 rounded-full" />
+                )}
               </button>
               {showNotifDropdown && (
                 <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg z-50 overflow-hidden">
@@ -59,8 +94,15 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn }) => {
                     <div className="p-3 text-sm text-gray-500">Ei ilmoituksia vielä.</div>
                   ) : (
                     notifications.map((n) => (
-                      <div key={n.id} className="p-3 text-sm border-b hover:bg-gray-100">
-                        {n.message}
+                      <div key={n.id} className="flex items-center justify-between p-3 text-sm border-b hover:bg-gray-100">
+                        <span className={n.isRead ? 'text-gray-500' : 'font-bold'}>{n.message}</span>
+                        <button
+                          onClick={() => handleDeleteNotification(n.id)}
+                          className="ml-2 text-red-500 hover:text-red-700 text-xs uppercase"
+                          title="Poista ilmoitus"
+                        >
+                          Poista
+                        </button>
                       </div>
                     ))
                   )}
@@ -91,6 +133,12 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn }) => {
         <div className="absolute top-full right-0 mt-2 w-40 bg-white border border-gray-200 rounded shadow-md flex flex-col font-semibold uppercase text-sm z-50">
           <Link to="/" className="px-4 py-2 hover:bg-gray-100" onClick={() => setMenuOpen(false)}>ETUSIVU</Link>
           <Link to="/tietoa" className="px-4 py-2 hover:bg-gray-100" onClick={() => setMenuOpen(false)}>MEISTÄ</Link>
+          {isLoggedIn && (
+            <>
+              <Link to="/viestit" className="px-4 py-2 hover:bg-gray-100" onClick={() => setMenuOpen(false)}>VIESTIT</Link>
+              <Link to="/my-work" className="px-4 py-2 hover:bg-gray-100" onClick={() => setMenuOpen(false)}>TYÖT</Link>
+            </>
+          )}
           {!isLoggedIn && (
             <Link to="/kirjaudu" className="px-4 py-2 hover:bg-gray-100" onClick={() => setMenuOpen(false)}>
               KIRJAUDU SISÄÄN

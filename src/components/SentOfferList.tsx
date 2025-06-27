@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { getSocket } from '../socket';
 
 interface Offer {
   id: number;
@@ -17,9 +18,11 @@ interface SentOfferListProps {
 const SentOfferList: React.FC<SentOfferListProps> = ({ selectedId, onSelect }) => {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchOffers = async () => {
+      setError(null);
       try {
         const token = localStorage.getItem('token');
         const res = await fetch('/api/offers/sent', {
@@ -28,7 +31,7 @@ const SentOfferList: React.FC<SentOfferListProps> = ({ selectedId, onSelect }) =
         const data = await res.json();
         setOffers(data);
       } catch (err) {
-        console.error('Error fetching sent offers:', err);
+        setError('Lähetettyjen tarjousten haku epäonnistui');
       } finally {
         setLoading(false);
       }
@@ -37,12 +40,47 @@ const SentOfferList: React.FC<SentOfferListProps> = ({ selectedId, onSelect }) =
     fetchOffers();
   }, []);
 
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleOfferDeleted = (deletedOfferId: number) => {
+      setOffers(prev => prev.filter(offer => offer.id !== deletedOfferId));
+    };
+
+    const handleOfferUpdated = (updatedOffer: Offer) => {
+      setOffers(prev => prev.map(offer => 
+        offer.id === updatedOffer.id ? updatedOffer : offer
+      ));
+    };
+
+    socket.on('offer-deleted', handleOfferDeleted);
+    socket.on('offer-updated', handleOfferUpdated);
+
+    return () => {
+      socket.off('offer-deleted', handleOfferDeleted);
+      socket.off('offer-updated', handleOfferUpdated);
+    };
+  }, []);
+
+  if (error) {
+    return (
+      <div className="fixed z-50 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg animate-slide-in left-1/2 -translate-x-1/2 bottom-4 w-[90vw] max-w-sm">
+        {error}
+      </div>
+    );
+  }
+
   if (loading) {
     return <div className="text-white/40 px-4 py-6">Ladataan...</div>;
   }
 
-  if (!offers.length) {
-    return <div className="text-white/50 px-4 py-10">Ei tarjouksia vielä</div>;
+  if (!offers || offers.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-white/40 text-sm pt-20">
+        <span>Ei lähetettyjä tarjouksia</span>
+      </div>
+    );
   }
 
   return (

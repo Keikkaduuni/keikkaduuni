@@ -3,7 +3,7 @@ import classNames from 'classnames';
 
 export const Card = ({ className, children }: { className?: string; children: React.ReactNode }) => {
   return (
-    <div className={classNames("rounded-2xl shadow-md border border-white/10 bg-white/5 p-4", className)}>
+    <div className={classNames("rounded-2xl shadow-md border border-white/20 bg-black p-4 text-white", className)}>
       {children}
     </div>
   );

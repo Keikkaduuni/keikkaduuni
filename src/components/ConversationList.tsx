@@ -1,5 +1,6 @@
 import React from 'react';
 import classNames from 'classnames';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Participant {
   userId: string;
@@ -23,6 +24,7 @@ interface Conversation {
   participants: Participant[];
   messages: Message[];
   isUnread?: boolean;
+  paymentCompleted?: boolean;
 }
 
 interface ConversationListProps {
@@ -66,96 +68,54 @@ const ConversationList: React.FC<ConversationListProps> = ({
     <div className="h-full flex flex-col">
       <div className="flex-1 overflow-y-auto">
         {filteredConversations.length === 0 ? (
-          <div className="flex items-center justify-center text-white/60 h-full">
-            Ei keskusteluja vielä
+          <div className="flex flex-col items-center justify-center h-full text-white/40 text-sm pt-20">
+            <span>Ei keskusteluja vielä</span>
           </div>
         ) : (
-          <div className="flex flex-col gap-1 px-2 py-2">
+          <AnimatePresence initial={false}>
             {filteredConversations.map((c) => {
               const other = c.participants.find((p) => p.userId !== currentUserId);
-              const lastMessage = c.messages?.[c.messages.length - 1];
-              const isSelected = selectedConversation?.id === c.id;
-
+              const isPalvelu = !!c.palveluId;
+              const isTarve = !!c.tarveId;
               return (
-                <div
+                <motion.div
                   key={c.id}
-                  onClick={async () => {
-                    if (c.isUnread) {
-                      try {
-                        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-                        await fetch(`http://localhost:5001/api/conversations/${c.id}/read`, {
-                          method: 'PATCH',
-                          headers: {
-                            Authorization: `Bearer ${token}`,
-                          },
-                        });
-
-                        setConversations?.((prev) =>
-                          prev.map((conv) =>
-                            conv.id === c.id ? { ...conv, isUnread: false } : conv
-                          )
-                        );
-                      } catch (err) {
-                        console.error('❌ Failed to mark conversation as read:', err);
-                      }
-                    }
-
-                    const isParticipant = c.participants.some((p) => p.userId === currentUserId);
-                    if (!isParticipant) {
-                      console.warn('🚫 Tried to open conversation without being a participant:', c.id);
-                      return;
-                    }
-                    
-                    setSelectedBookingRequest?.(null); // ✅ clears booking view
-                    onSelect(c);
-                    if (window.innerWidth < 768) {
-                      sessionStorage.setItem('showMobileThread', 'true');
-                       sessionStorage.setItem('selectedConversationId', c.id); 
-                     }
-
-                
-                  }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.25 }}
+                  onClick={() => onSelect(c)}
                   className={classNames(
-                    'flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all',
-                    isSelected ? 'bg-white/10 border border-white' : 'hover:bg-white/5'
+                    'flex items-center gap-4 p-4 rounded-xl cursor-pointer mb-2 shadow-sm',
+                    selectedConversation?.id === c.id ? 'bg-white/10 ring-2 ring-white/40' : 'bg-white/5 hover:bg-white/10',
+                    'touch-manipulation'
                   )}
                 >
-                  <img
-                    src={other?.profilePhoto || '/default-avatar.png'}
-                    alt={other?.name}
-                    className="w-10 h-10 rounded-full object-cover"
-                  />
+                  {/* Other user's profile photo */}
+                  {other?.profilePhoto && (
+                    <img src={other.profilePhoto} alt={other.name} className="w-10 h-10 rounded-full object-cover border border-white/20" />
+                  )}
                   <div className="flex-1 min-w-0">
-                    <div
-                      className={classNames(
-                        'truncate',
-                        c.isUnread ? 'text-white font-bold' : 'text-white font-semibold'
-                      )}
-                    >
-                      {other?.name || 'Tuntematon'}
+                    <div className="font-anton text-white text-base truncate">
+                      {isPalvelu && c.palveluTitle ? `Palvelu: ${c.palveluTitle}` : isTarve && c.tarveTitle ? `Tarve: ${c.tarveTitle}` : 'Keskustelu'}
                     </div>
-                    <div className="text-sm text-gray-400 truncate">
-                      {c.palveluTitle || c.tarveTitle || 'Ei otsikkoa'}
-                    </div>
-                    <div className="text-sm text-gray-400 truncate">
-                      {lastMessage?.content || 'Ei viestejä vielä'}
-                    </div>
+                    <div className="text-xs text-white/60 truncate">{other?.name || 'Tuntematon'}</div>
                   </div>
-                  <div className="flex flex-col items-end justify-center">
-                    <span className="text-xs text-gray-500">
-                      {lastMessage?.createdAt
-                        ? new Date(lastMessage.createdAt).toLocaleTimeString('fi-FI', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : ''}
-                    </span>
-                    {c.isUnread && <div className="w-2 h-2 bg-red-500 rounded-full mt-1" />}
-                  </div>
-                </div>
+                  <AnimatePresence>
+                    {c.isUnread && (
+                      <motion.span
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="w-2.5 h-2.5 bg-red-500 rounded-full ml-2"
+                      />
+                    )}
+                  </AnimatePresence>
+                </motion.div>
               );
             })}
-          </div>
+          </AnimatePresence>
         )}
       </div>
     </div>

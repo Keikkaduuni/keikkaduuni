@@ -1,6 +1,9 @@
 import { useState, useContext, useEffect } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
+import heic2any from 'heic2any';
+import { convertHeicToJpeg, isHeicFile } from '../utils/heicConverter';
+import { BACKEND_URL } from '../config';
 
 const ProfileForm = () => {
   const { user, fetchUser } = useContext(AuthContext);
@@ -43,8 +46,26 @@ const ProfileForm = () => {
     if (name === 'name') setNameError('');
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    if (file && isHeicFile(file)) {
+      console.log('🔄 ProfileForm - Attempting HEIC/HEIF conversion...');
+      const result = await convertHeicToJpeg(file);
+      
+      if (result.success && result.file) {
+        console.log('✅ ProfileForm - HEIC/HEIF conversion successful:', result.file.name);
+        setNewPhotoFile(result.file);
+        setPreviewUrl(URL.createObjectURL(result.file));
+        setRemovePhoto(false);
+      } else {
+        console.error('❌ ProfileForm - HEIC/HEIF conversion failed:', result.error);
+        setNewPhotoFile(null);
+        setPreviewUrl(null);
+        setRemovePhoto(false);
+        alert(result.error || 'HEIC/HEIF-kuvan muuntaminen epäonnistui.');
+      }
+      return;
+    }
     if (file) {
       setNewPhotoFile(file);
       setPreviewUrl(URL.createObjectURL(file));
@@ -62,7 +83,7 @@ const ProfileForm = () => {
   const checkNameTaken = async (name: string) => {
     try {
       setCheckingName(true);
-      const res = await axios.get('http://localhost:5001/api/check-name', {
+      const res = await axios.get(`${BACKEND_URL}/api/check-name`, {
         params: { name, email: user?.email || '' },
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
       });
@@ -111,7 +132,7 @@ const ProfileForm = () => {
     }
 
     try {
-      const res = await axios.put('http://localhost:5001/api/profile', payload, {
+      const res = await axios.put(`${BACKEND_URL}/api/profile`, payload, {
         withCredentials: true,
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
       });
@@ -141,6 +162,12 @@ const ProfileForm = () => {
   };
 
   console.log("🧠 Current formData.companyName:", formData.companyName);
+
+  // Add error handling for image loading
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    console.error('❌ Profile image failed to load:', e.currentTarget.src);
+    e.currentTarget.src = '/default-avatar.svg';
+  };
 
   return (
     <form onSubmit={handleSubmit} className="max-w-md mx-auto p-4 bg-white shadow-md rounded-lg text-black">
@@ -179,9 +206,10 @@ const ProfileForm = () => {
       {(previewUrl || formData.profilePhoto) && !removePhoto && (
         <div className="mb-4 text-center">
           <img
-            src={previewUrl || `http://localhost:5001${formData.profilePhoto}`}
+            src={previewUrl || `${BACKEND_URL}${formData.profilePhoto}`}
             alt="Profile"
             className="w-24 h-24 object-cover rounded-full mx-auto"
+            onError={handleImageError}
           />
           <button type="button" onClick={handleRemovePhoto} className="mt-2 text-sm text-red-600 hover:underline">
             Poista kuva

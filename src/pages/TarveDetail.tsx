@@ -42,6 +42,8 @@ const TarveDetail: React.FC = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showUpdateToast, setShowUpdateToast] = useState(false);
 
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
 
 
 
@@ -559,20 +561,21 @@ const TarveDetail: React.FC = () => {
 
       {/* Tarjous lähetetty notification */}
       {showSuccess && (
-        <div className="fixed top-6 right-6 z-50">
-          <div className="bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in">
-
-            <span>Tarjous lähetetty onnistuneesti</span>
-            <button onClick={dismissSuccess} className="text-white text-lg leading-none">×</button>
-          </div>
+        <div className={
+          'fixed z-50 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in ' +
+          (isMobile ? 'left-1/2 -translate-x-1/2 bottom-4 w-[90vw] max-w-sm' : 'top-6 right-6')
+        }>
+          <span>Tarjous lähetetty onnistuneesti</span>
+          <button onClick={dismissSuccess} className="text-white text-lg leading-none">×</button>
         </div>
       )}
         {showReportSuccess && (
-  <div className="fixed top-6 right-6 z-50">
-    <div className="bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in">
-      <span>Kiitos ilmoituksesta! Keikkaduunin tiimi reagoi siihen ❤️</span>
-      <button onClick={() => setShowReportSuccess(false)} className="text-white text-lg leading-none">×</button>
-    </div>
+  <div className={
+    'fixed z-50 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in ' +
+    (isMobile ? 'left-1/2 -translate-x-1/2 bottom-4 w-[90vw] max-w-sm' : 'top-6 right-6')
+  }>
+    <span>Kiitos ilmoituksesta! Keikkaduunin tiimi reagoi siihen ❤️</span>
+    <button onClick={() => setShowReportSuccess(false)} className="text-white text-lg leading-none">×</button>
   </div>
 )}
      {showEditModal && tarve && (
@@ -587,11 +590,12 @@ const TarveDetail: React.FC = () => {
   />
 )}
         {showUpdateToast && (
-  <div className="fixed top-6 right-6 z-50">
-    <div className="bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in">
-      <span>Tarve päivitetty onnistuneesti</span>
-      <button onClick={() => setShowUpdateToast(false)} className="text-white text-lg leading-none">×</button>
-    </div>
+  <div className={
+    'fixed z-50 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in ' +
+    (isMobile ? 'left-1/2 -translate-x-1/2 bottom-4 w-[90vw] max-w-sm' : 'top-6 right-6')
+  }>
+    <span>Tarve päivitetty onnistuneesti</span>
+    <button onClick={() => setShowUpdateToast(false)} className="text-white text-lg leading-none">×</button>
   </div>
 )}
 

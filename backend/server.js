@@ -18,6 +18,8 @@ import messageRoutes from './routes/messages.js';
 import http from 'http';
 import { initSocket } from './socket.js';
 import { Server } from 'socket.io';
+import notificationsRouter from './routes/notifications.js';
+import sharp from 'sharp';
 
 
 
@@ -30,17 +32,113 @@ const PORT = process.env.PORT || 5001;
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'uploads/'),
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
+    const ext = path.extname(file.originalname).toLowerCase();
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     cb(null, `upload-${unique}${ext}`);
   },
 });
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    // Enhanced HEIC/HEIF detection at multer level
+    const ext = path.extname(file.originalname).toLowerCase();
+    const mime = file.mimetype?.toLowerCase() || '';
+    
+    const isHeicHeif = 
+      ext === '.heic' || ext === '.heif' || ext === '.HEIC' || ext === '.HEIF' ||
+      mime === 'image/heic' || mime === 'image/heif' ||
+      mime === 'image/heic-sequence' || mime === 'image/heif-sequence' ||
+      file.originalname?.toLowerCase().includes('heic') ||
+      file.originalname?.toLowerCase().includes('heif');
+    
+    console.log('🔍 Multer fileFilter check:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      extension: ext,
+      isHeicHeif
+    });
+    
+    if (isHeicHeif) {
+      console.log('❌ Multer rejecting HEIC/HEIF file');
+      return cb(new Error('HEIC/HEIF images are not supported. Please use JPEG or PNG.'), false);
+    }
+    
+    // More aggressive iPhone detection - reject ALL PNG files from iPhones
+    const isFromIPhone = file.originalname?.includes('IMG_') || 
+                        file.originalname?.includes('IMG') ||
+                        file.originalname?.includes('Photo') ||
+                        file.originalname?.includes('photo') ||
+                        file.originalname?.includes('PXL_') ||
+                        file.originalname?.includes('Screenshot') ||
+                        file.originalname?.includes('screenshot');
+    
+    console.log('🔍 iPhone detection check:', {
+      originalname: file.originalname,
+      extension: ext,
+      isFromIPhone,
+      isPNG: ext === '.png',
+      hasIMG: file.originalname?.includes('IMG_'),
+      hasIMGNoUnderscore: file.originalname?.includes('IMG'),
+      hasPhoto: file.originalname?.includes('Photo'),
+      hasPhotoLower: file.originalname?.includes('photo'),
+      hasPXL: file.originalname?.includes('PXL_'),
+      hasScreenshot: file.originalname?.includes('Screenshot'),
+      hasScreenshotLower: file.originalname?.includes('screenshot')
+    });
+    
+    // Reject ALL PNG files from iPhones as they're likely disguised HEIC
+    if (isFromIPhone && ext === '.png') {
+      console.log('❌ Rejecting PNG file from iPhone (likely disguised HEIC)');
+      return cb(new Error('PNG files from iPhones are not supported as they may be disguised HEIC files. Please convert to JPEG before uploading.'), false);
+    }
+    
+    // Also reject JPEG files from iPhones if they have suspicious names
+    if (isFromIPhone && (ext === '.jpg' || ext === '.jpeg') && file.originalname?.includes('IMG_')) {
+      console.log('⚠️ Warning: JPEG from iPhone detected, but allowing with caution');
+    }
+    
+    console.log('✅ Multer accepting file');
+    cb(null, true);
+  },
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  }
+});
+
+// Multer error handling middleware
+const handleMulterError = (error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    console.error('❌ Multer error:', error.message);
+    return res.status(400).json({ error: 'File upload error: ' + error.message });
+  }
+  
+  if (error.message && error.message.includes('HEIC/HEIF')) {
+    console.error('❌ HEIC/HEIF rejected by multer:', error.message);
+    return res.status(400).json({ error: error.message });
+  }
+  
+  next(error);
+};
 
 /* ------------------ Middleware ------------------ */
 app.use(
   cors({
-    origin: 'http://localhost:5173',
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      // Allow localhost and local network IPs
+      if (origin.includes('localhost') || 
+          origin.includes('127.0.0.1') || 
+          origin.includes('172.20.10.2') ||
+          origin.includes('192.168.') ||
+          origin.includes('10.') ||
+          origin.includes('172.')) {
+        return callback(null, true);
+      }
+      
+      callback(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
@@ -49,12 +147,9 @@ app.use(
 app.options('*', cors());
 app.use(bodyParser.json());
 app.use(express.json());
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static('../uploads'));
 
-app.use((req, res, next) => {
-  console.log(`➡ ${req.method} ${req.url}`);
-  next();
-});
+// console.log(`➡ ${req.method} ${req.url}`);
 
 
 app.use('/api/bookings', bookingsRoutes);
@@ -143,7 +238,7 @@ listingsRouter.get('/:id', (req, res) => {
 listingsRouter.post(
   '/',
   upload.single('photo'),
-  (req, res) => {
+  async (req, res) => {
     console.log('=== POST /listings vastaanotettu ===');
     console.log('req.body:', req.body);
     console.log('req.file:', req.file);
@@ -167,7 +262,53 @@ listingsRouter.post(
 
     let photoUrl = null;
     if (req.file) {
-      photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+      const filePath = req.file.path;
+      const ext = path.extname(filePath).toLowerCase();
+      const mime = req.file.mimetype?.toLowerCase() || '';
+      
+      // Enhanced HEIC/HEIF detection
+      const isHeicHeif = 
+        ext === '.heic' || ext === '.heif' || ext === '.HEIC' || ext === '.HEIF' ||
+        mime === 'image/heic' || mime === 'image/heif' ||
+        mime === 'image/heic-sequence' || mime === 'image/heif-sequence' ||
+        req.file.originalname?.toLowerCase().includes('heic') ||
+        req.file.originalname?.toLowerCase().includes('heif');
+      
+      console.log('🔍 File upload debug:', {
+        filename: req.file.filename,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        extension: ext,
+        isHeicHeif,
+        path: filePath
+      });
+      
+      if (isHeicHeif) {
+        console.log('❌ HEIC/HEIF detected, rejecting file');
+        fs.unlinkSync(filePath);
+        return res.status(400).json({ error: 'HEIC/HEIF images are not supported by the backend. Please use JPEG or PNG.' });
+      }
+      
+      console.log('✅ File passed HEIC check, processing with sharp');
+      const tempPath = filePath + '-resized';
+      try {
+        await sharp(filePath)
+          .resize(1280, 720, { fit: 'cover' })
+          .toFile(tempPath);
+        fs.unlinkSync(filePath);
+        fs.renameSync(tempPath, filePath);
+        photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+      } catch (sharpError) {
+        console.error('❌ Sharp processing failed:', sharpError.message);
+        // Clean up files
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        
+        if (sharpError.message.includes('heif') || sharpError.message.includes('HEIC')) {
+          return res.status(400).json({ error: 'HEIC/HEIF images are not supported. Please use JPEG or PNG.' });
+        }
+        return res.status(500).json({ error: 'Image processing failed. Please try a different image.' });
+      }
     }
 
     const newListing = {
@@ -301,11 +442,14 @@ palvelutRouter.get(
       }
       // load bookings with user info
       const bookings = await prisma.booking.findMany({
-        where: { palveluId },
+        where: {
+          palveluId,
+          paymentCompleted: false,
+          status: { not: 'rejected' },
+        },
         include: {
           user: { select: { id: true, name: true, profilePhoto: true } },
-          palvelu: { select: { title: true } }, // ✅ ADD THIS LINE
-
+          palvelu: { select: { title: true } },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -339,7 +483,7 @@ palvelutRouter.get('/:id', async (req, res) => {
   }
 });
 
-palvelutRouter.post('/', authenticateToken, upload.single('photo'), async (req, res) => {
+palvelutRouter.post('/', authenticateToken, upload.single('photo'), handleMulterError, async (req, res) => {
   try {
     const {
       title,
@@ -357,7 +501,74 @@ palvelutRouter.post('/', authenticateToken, upload.single('photo'), async (req, 
 
       let photoUrl = null;
       if (req.file) {
-        photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+        const filePath = req.file.path;
+        const ext = path.extname(filePath).toLowerCase();
+        const mime = req.file.mimetype?.toLowerCase() || '';
+        
+        // Enhanced HEIC/HEIF detection
+        const isHeicHeif = 
+          ext === '.heic' || ext === '.heif' || ext === '.HEIC' || ext === '.HEIF' ||
+          mime === 'image/heic' || mime === 'image/heif' ||
+          mime === 'image/heic-sequence' || mime === 'image/heif-sequence' ||
+          req.file.originalname?.toLowerCase().includes('heic') ||
+          req.file.originalname?.toLowerCase().includes('heif');
+        
+        // Additional check: Read file header to detect disguised HEIC files
+        let isDisguisedHeic = false;
+        try {
+          const buffer = fs.readFileSync(filePath);
+          const header = buffer.slice(0, 12);
+          
+          // HEIC files start with specific bytes
+          // Check for HEIC/HEIF file signatures
+          if (header[4] === 0x66 && header[5] === 0x74 && header[6] === 0x79 && header[7] === 0x70) {
+            // This is a container format, check for HEIC/HEIF subtypes
+            const subtype = header.slice(8, 12).toString('ascii');
+            if (subtype.includes('heic') || subtype.includes('heif') || subtype.includes('mif1') || subtype.includes('msf1')) {
+              isDisguisedHeic = true;
+              console.log('🔍 Detected disguised HEIC file by header analysis:', subtype);
+            }
+          }
+        } catch (headerError) {
+          console.log('⚠️ Could not read file header for analysis');
+        }
+        
+        console.log('🔍 File upload debug:', {
+          filename: req.file.filename,
+          originalname: req.file.originalname,
+          mimetype: req.file.mimetype,
+          extension: ext,
+          isHeicHeif,
+          isDisguisedHeic,
+          path: filePath
+        });
+        
+        if (isHeicHeif || isDisguisedHeic) {
+          console.log('❌ HEIC/HEIF detected, rejecting file');
+          fs.unlinkSync(filePath);
+          return res.status(400).json({ error: 'HEIC/HEIF images are not supported by the backend. Please use JPEG or PNG.' });
+        }
+        
+        console.log('✅ File passed HEIC check, processing with sharp');
+        const tempPath = filePath + '-resized';
+        try {
+          await sharp(filePath)
+            .resize(1280, 720, { fit: 'cover' })
+            .toFile(tempPath);
+          fs.unlinkSync(filePath);
+          fs.renameSync(tempPath, filePath);
+          photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+        } catch (sharpError) {
+          console.error('❌ Sharp processing failed:', sharpError.message);
+          // Clean up files
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+          
+          if (sharpError.message.includes('heif') || sharpError.message.includes('HEIC')) {
+            return res.status(400).json({ error: 'HEIC/HEIF images are not supported. Please use JPEG or PNG.' });
+          }
+          return res.status(500).json({ error: 'Image processing failed. Please try a different image.' });
+        }
       }
 
 
@@ -382,7 +593,7 @@ palvelutRouter.post('/', authenticateToken, upload.single('photo'), async (req, 
 });
 
 
-palvelutRouter.put('/:id', authenticateToken, upload.single('photo'), async (req, res) => {
+palvelutRouter.put('/:id', authenticateToken, upload.single('photo'), handleMulterError, async (req, res) => {
   const id = Number(req.params.id);
 
   const {
@@ -402,7 +613,74 @@ palvelutRouter.put('/:id', authenticateToken, upload.single('photo'), async (req
   let photoUrl = null;
 
   if (req.file) {
-    photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    const filePath = req.file.path;
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = req.file.mimetype?.toLowerCase() || '';
+    
+    // Enhanced HEIC/HEIF detection
+    const isHeicHeif = 
+      ext === '.heic' || ext === '.heif' || ext === '.HEIC' || ext === '.HEIF' ||
+      mime === 'image/heic' || mime === 'image/heif' ||
+      mime === 'image/heic-sequence' || mime === 'image/heif-sequence' ||
+      req.file.originalname?.toLowerCase().includes('heic') ||
+      req.file.originalname?.toLowerCase().includes('heif');
+    
+    // Additional check: Read file header to detect disguised HEIC files
+    let isDisguisedHeic = false;
+    try {
+      const buffer = fs.readFileSync(filePath);
+      const header = buffer.slice(0, 12);
+      
+      // HEIC files start with specific bytes
+      // Check for HEIC/HEIF file signatures
+      if (header[4] === 0x66 && header[5] === 0x74 && header[6] === 0x79 && header[7] === 0x70) {
+        // This is a container format, check for HEIC/HEIF subtypes
+        const subtype = header.slice(8, 12).toString('ascii');
+        if (subtype.includes('heic') || subtype.includes('heif') || subtype.includes('mif1') || subtype.includes('msf1')) {
+          isDisguisedHeic = true;
+          console.log('🔍 Detected disguised HEIC file by header analysis:', subtype);
+        }
+      }
+    } catch (headerError) {
+      console.log('⚠️ Could not read file header for analysis');
+    }
+    
+    console.log('🔍 File upload debug:', {
+      filename: req.file.filename,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      extension: ext,
+      isHeicHeif,
+      isDisguisedHeic,
+      path: filePath
+    });
+    
+    if (isHeicHeif || isDisguisedHeic) {
+      console.log('❌ HEIC/HEIF detected, rejecting file');
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ error: 'HEIC/HEIF images are not supported by the backend. Please use JPEG or PNG.' });
+    }
+    
+    console.log('✅ File passed HEIC check, processing with sharp');
+    const tempPath = filePath + '-resized';
+    try {
+      await sharp(filePath)
+        .resize(1280, 720, { fit: 'cover' })
+        .toFile(tempPath);
+      fs.unlinkSync(filePath);
+      fs.renameSync(tempPath, filePath);
+      photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    } catch (sharpError) {
+      console.error('❌ Sharp processing failed:', sharpError.message);
+      // Clean up files
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      
+      if (sharpError.message.includes('heif') || sharpError.message.includes('HEIC')) {
+        return res.status(400).json({ error: 'HEIC/HEIF images are not supported. Please use JPEG or PNG.' });
+      }
+      return res.status(500).json({ error: 'Image processing failed. Please try a different image.' });
+    }
   } else if (existingPhoto) {
     photoUrl = existingPhoto;
   }
@@ -507,6 +785,67 @@ app.get('/palvelut/:id/reviews', async (req, res) => {
 /* ------------------ Tarpeet Routes ------------------ */
 const tarpeetRouter = express.Router();
 
+// GET /api/tarpeet → fetch all Tarpeet
+tarpeetRouter.get('/', async (req, res) => {
+  try {
+    const tarpeet = await prisma.tarve.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(tarpeet);
+  } catch (err) {
+    console.error('Error fetching all Tarpeet:', err);
+    res.status(500).json({ error: 'Failed to fetch Tarpeet' });
+  }
+});
+
+tarpeetRouter.get(
+  '/omat',
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const userId = req.user.id;
+
+      const needs = await prisma.tarve.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          photoUrl: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // attach offer count + unread offer count per tarve
+      const withCounts = await Promise.all(
+        needs.map(async (t) => {
+          const pendingCount = await prisma.offer.count({
+            where: { tarveId: t.id, status: 'pending' },
+          });
+
+          const unreadOffers = await prisma.offer.count({
+            where: { tarveId: t.id, status: 'pending', isRead: false },
+          });
+
+          return {
+            id: t.id,
+            title: t.title,
+            createdAt: t.createdAt,
+            photoUrl: t.photoUrl,
+            pendingCount,
+            hasUnreadOffers: unreadOffers > 0,
+          };
+        })
+      );
+
+      res.json(withCounts);
+    } catch (err) {
+      console.error('Error in GET /omat (tarpeet):', err);
+      res.status(500).json({ error: 'Failed to load your tarpeet' });
+    }
+  }
+);
+
 tarpeetRouter.get('/:id', async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) {
@@ -546,88 +885,110 @@ tarpeetRouter.get('/:id', async (req, res) => {
 });
 
 
-tarpeetRouter.get(
-  '/omat',
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const userId = req.user.id;
-
-      const needs = await prisma.tarve.findMany({
-        where: { userId },
-        select: {
-          id: true,
-          title: true,
-          createdAt: true,     // ✅ added
-          photoUrl: true,      // ✅ added
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      res.json(needs);
-    } catch (err) {
-      console.error('Error in GET /omat (tarpeet):', err);
-      res.status(500).json({ error: 'Failed to load your tarpeet' });
-    }
-  }
-);
-
-// GET /api/tarpeet → fetch all Tarpeet
-tarpeetRouter.get('/', async (req, res) => {
-  try {
-    const tarpeet = await prisma.tarve.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
-    res.json(tarpeet);
-  } catch (err) {
-    console.error('Error fetching all Tarpeet:', err);
-    res.status(500).json({ error: 'Failed to fetch Tarpeet' });
-  }
-});
-
-
 
 
 
 // POST /tarpeet (JSON only, requires auth)
-tarpeetRouter.post(
-  '/',
-  authenticateToken,
-  upload.single('photo'),
-  async (req, res) => {
-    const { title, description, category, location } = req.body;
-    const userId = req.user.id;
+tarpeetRouter.post('/', authenticateToken, upload.single('photo'), handleMulterError, async (req, res) => {
+  const { title, description, category, location } = req.body;
+  const userId = req.user.id;
 
-    if (!title?.trim() || !description?.trim()) {
-      return res.status(400).json({ error: 'Title and description are required.' });
-    }
+  if (!title?.trim() || !description?.trim()) {
+    return res.status(400).json({ error: 'Title and description are required.' });
+  }
 
-    let photoUrl = null;
-    if (req.file) {
-      photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-    }
-
+  let photoUrl = null;
+  if (req.file) {
+    const filePath = req.file.path;
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = req.file.mimetype?.toLowerCase() || '';
+    
+    // Enhanced HEIC/HEIF detection
+    const isHeicHeif = 
+      ext === '.heic' || ext === '.heif' || ext === '.HEIC' || ext === '.HEIF' ||
+      mime === 'image/heic' || mime === 'image/heif' ||
+      mime === 'image/heic-sequence' || mime === 'image/heif-sequence' ||
+      req.file.originalname?.toLowerCase().includes('heic') ||
+      req.file.originalname?.toLowerCase().includes('heif');
+    
+    // Additional check: Read file header to detect disguised HEIC files
+    let isDisguisedHeic = false;
     try {
-      const newTarve = await prisma.tarve.create({
-        data: {
-          title,
-          description,
-          category: category || null,
-          location: location || null,
-          userId,
-          photoUrl,
-        },
-      });
-      return res.status(201).json(newTarve);
-    } catch (err) {
-      console.error('Failed to create tarve:', err);
-      return res.status(500).json({ error: 'Failed to create tarve' });
+      const buffer = fs.readFileSync(filePath);
+      const header = buffer.slice(0, 12);
+      
+      // HEIC files start with specific bytes
+      // Check for HEIC/HEIF file signatures
+      if (header[4] === 0x66 && header[5] === 0x74 && header[6] === 0x79 && header[7] === 0x70) {
+        // This is a container format, check for HEIC/HEIF subtypes
+        const subtype = header.slice(8, 12).toString('ascii');
+        if (subtype.includes('heic') || subtype.includes('heif') || subtype.includes('mif1') || subtype.includes('msf1')) {
+          isDisguisedHeic = true;
+          console.log('🔍 Detected disguised HEIC file by header analysis:', subtype);
+        }
+      }
+    } catch (headerError) {
+      console.log('⚠️ Could not read file header for analysis');
+    }
+    
+    console.log('🔍 File upload debug:', {
+      filename: req.file.filename,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      extension: ext,
+      isHeicHeif,
+      isDisguisedHeic,
+      path: filePath
+    });
+    
+    if (isHeicHeif || isDisguisedHeic) {
+      console.log('❌ HEIC/HEIF detected, rejecting file');
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ error: 'HEIC/HEIF images are not supported by the backend. Please use JPEG or PNG.' });
+    }
+    
+    console.log('✅ File passed HEIC check, processing with sharp');
+    const tempPath = filePath + '-resized';
+    try {
+      await sharp(filePath)
+        .resize(1280, 720, { fit: 'cover' })
+        .toFile(tempPath);
+      fs.unlinkSync(filePath);
+      fs.renameSync(tempPath, filePath);
+      photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    } catch (sharpError) {
+      console.error('❌ Sharp processing failed:', sharpError.message);
+      // Clean up files
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      
+      if (sharpError.message.includes('heif') || sharpError.message.includes('HEIC')) {
+        return res.status(400).json({ error: 'HEIC/HEIF images are not supported. Please use JPEG or PNG.' });
+      }
+      return res.status(500).json({ error: 'Image processing failed. Please try a different image.' });
     }
   }
-);
+
+  try {
+    const newTarve = await prisma.tarve.create({
+      data: {
+        title,
+        description,
+        category: category || null,
+        location: location || null,
+        userId,
+        photoUrl,
+      },
+    });
+    return res.status(201).json(newTarve);
+  } catch (err) {
+    console.error('Failed to create tarve:', err);
+    return res.status(500).json({ error: 'Failed to create tarve' });
+  }
+});
 
 
-tarpeetRouter.put('/:id', authenticateToken, upload.single('photo'), async (req, res) => {
+tarpeetRouter.put('/:id', authenticateToken, upload.single('photo'), handleMulterError, async (req, res) => {
   const id = Number(req.params.id);
   const { title, description, category, location, existingPhoto } = req.body;
 
@@ -638,7 +999,74 @@ tarpeetRouter.put('/:id', authenticateToken, upload.single('photo'), async (req,
   let photoUrl = null;
   if (req.file) {
     // 📸 New photo uploaded
-    photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    const filePath = req.file.path;
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = req.file.mimetype?.toLowerCase() || '';
+    
+    // Enhanced HEIC/HEIF detection
+    const isHeicHeif = 
+      ext === '.heic' || ext === '.heif' || ext === '.HEIC' || ext === '.HEIF' ||
+      mime === 'image/heic' || mime === 'image/heif' ||
+      mime === 'image/heic-sequence' || mime === 'image/heif-sequence' ||
+      req.file.originalname?.toLowerCase().includes('heic') ||
+      req.file.originalname?.toLowerCase().includes('heif');
+    
+    // Additional check: Read file header to detect disguised HEIC files
+    let isDisguisedHeic = false;
+    try {
+      const buffer = fs.readFileSync(filePath);
+      const header = buffer.slice(0, 12);
+      
+      // HEIC files start with specific bytes
+      // Check for HEIC/HEIF file signatures
+      if (header[4] === 0x66 && header[5] === 0x74 && header[6] === 0x79 && header[7] === 0x70) {
+        // This is a container format, check for HEIC/HEIF subtypes
+        const subtype = header.slice(8, 12).toString('ascii');
+        if (subtype.includes('heic') || subtype.includes('heif') || subtype.includes('mif1') || subtype.includes('msf1')) {
+          isDisguisedHeic = true;
+          console.log('🔍 Detected disguised HEIC file by header analysis:', subtype);
+        }
+      }
+    } catch (headerError) {
+      console.log('⚠️ Could not read file header for analysis');
+    }
+    
+    console.log('🔍 File upload debug:', {
+      filename: req.file.filename,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      extension: ext,
+      isHeicHeif,
+      isDisguisedHeic,
+      path: filePath
+    });
+    
+    if (isHeicHeif || isDisguisedHeic) {
+      console.log('❌ HEIC/HEIF detected, rejecting file');
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ error: 'HEIC/HEIF images are not supported by the backend. Please use JPEG or PNG.' });
+    }
+    
+    console.log('✅ File passed HEIC check, processing with sharp');
+    const tempPath = filePath + '-resized';
+    try {
+      await sharp(filePath)
+        .resize(1280, 720, { fit: 'cover' })
+        .toFile(tempPath);
+      fs.unlinkSync(filePath);
+      fs.renameSync(tempPath, filePath);
+      photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    } catch (sharpError) {
+      console.error('❌ Sharp processing failed:', sharpError.message);
+      // Clean up files
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      
+      if (sharpError.message.includes('heif') || sharpError.message.includes('HEIC')) {
+        return res.status(400).json({ error: 'HEIC/HEIF images are not supported. Please use JPEG or PNG.' });
+      }
+      return res.status(500).json({ error: 'Image processing failed. Please try a different image.' });
+    }
   } else if (existingPhoto) {
     // 🖼 Keep existing photo
     photoUrl = existingPhoto;
@@ -715,6 +1143,7 @@ app.put(
   '/api/profile',
   authenticateToken,
   upload.single('profilePhoto'),
+  handleMulterError,
   async (req, res) => {
     try {
       const userId = req.user.id;
@@ -754,7 +1183,74 @@ app.put(
         if (oldPhotoPath && fs.existsSync(oldPhotoPath)) {
           fs.unlinkSync(oldPhotoPath);
         }
-        updateData.profilePhoto = `/uploads/${req.file.filename}`;
+        const filePath = req.file.path;
+        const ext = path.extname(filePath).toLowerCase();
+        const mime = req.file.mimetype?.toLowerCase() || '';
+        
+        // Enhanced HEIC/HEIF detection
+        const isHeicHeif = 
+          ext === '.heic' || ext === '.heif' || ext === '.HEIC' || ext === '.HEIF' ||
+          mime === 'image/heic' || mime === 'image/heif' ||
+          mime === 'image/heic-sequence' || mime === 'image/heif-sequence' ||
+          req.file.originalname?.toLowerCase().includes('heic') ||
+          req.file.originalname?.toLowerCase().includes('heif');
+        
+        // Additional check: Read file header to detect disguised HEIC files
+        let isDisguisedHeic = false;
+        try {
+          const buffer = fs.readFileSync(filePath);
+          const header = buffer.slice(0, 12);
+          
+          // HEIC files start with specific bytes
+          // Check for HEIC/HEIF file signatures
+          if (header[4] === 0x66 && header[5] === 0x74 && header[6] === 0x79 && header[7] === 0x70) {
+            // This is a container format, check for HEIC/HEIF subtypes
+            const subtype = header.slice(8, 12).toString('ascii');
+            if (subtype.includes('heic') || subtype.includes('heif') || subtype.includes('mif1') || subtype.includes('msf1')) {
+              isDisguisedHeic = true;
+              console.log('🔍 Detected disguised HEIC file by header analysis:', subtype);
+            }
+          }
+        } catch (headerError) {
+          console.log('⚠️ Could not read file header for analysis');
+        }
+        
+        console.log('🔍 File upload debug:', {
+          filename: req.file.filename,
+          originalname: req.file.originalname,
+          mimetype: req.file.mimetype,
+          extension: ext,
+          isHeicHeif,
+          isDisguisedHeic,
+          path: filePath
+        });
+        
+        if (isHeicHeif || isDisguisedHeic) {
+          console.log('❌ HEIC/HEIF detected, rejecting file');
+          fs.unlinkSync(filePath);
+          return res.status(400).json({ error: 'HEIC/HEIF images are not supported by the backend. Please use JPEG or PNG.' });
+        }
+        
+        console.log('✅ File passed HEIC check, processing with sharp');
+        const tempPath = filePath + '-resized';
+        try {
+          await sharp(filePath)
+            .resize(1280, 720, { fit: 'cover' })
+            .toFile(tempPath);
+          fs.unlinkSync(filePath);
+          fs.renameSync(tempPath, filePath);
+          updateData.profilePhoto = `/uploads/${req.file.filename}`;
+        } catch (sharpError) {
+          console.error('❌ Sharp processing failed:', sharpError.message);
+          // Clean up files
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+          
+          if (sharpError.message.includes('heif') || sharpError.message.includes('HEIC')) {
+            return res.status(400).json({ error: 'HEIC/HEIF images are not supported. Please use JPEG or PNG.' });
+          }
+          return res.status(500).json({ error: 'Image processing failed. Please try a different image.' });
+        }
       } else if (removePhoto === 'true') {
         if (oldPhotoPath && fs.existsSync(oldPhotoPath)) {
           fs.unlinkSync(oldPhotoPath);
@@ -900,6 +1396,48 @@ app.get('/routes', (req, res) => {
 const server = http.createServer(app); // 🔁 convert Express to HTTP server
 initSocket(server);                    // 🔌 attach WebSocket support
 
-server.listen(PORT, () => {
-  console.log(`🟢 Backend + Socket.IO running at http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🟢 Backend + Socket.IO running at http://0.0.0.0:${PORT}`);
+  console.log(`🌐 Accessible from mobile at http://172.20.10.2:${PORT}`);
+});
+
+app.use('/api/notifications', notificationsRouter);
+
+// Global error handler for unhandled sharp errors
+app.use((error, req, res, next) => {
+  console.error('🔥 Global error handler caught:', error.message);
+  
+  if (error.message.includes('heif') || error.message.includes('HEIC')) {
+    // Clean up any uploaded files
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (cleanupError) {
+        console.error('Failed to cleanup file:', cleanupError);
+      }
+    }
+    
+    return res.status(400).json({ error: 'HEIC/HEIF images are not supported. Please use JPEG or PNG.' });
+  }
+  
+  console.error('Unhandled error:', error);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// Process-level error handlers
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔥 Unhandled Rejection at:', promise, 'reason:', reason);
+  if (reason && reason.message && (reason.message.includes('heif') || reason.message.includes('HEIC'))) {
+    console.log('✅ Caught HEIC error, preventing crash');
+    return;
+  }
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('🔥 Uncaught Exception:', error.message);
+  if (error.message.includes('heif') || error.message.includes('HEIC')) {
+    console.log('✅ Caught HEIC error, preventing crash');
+    return;
+  }
+  process.exit(1);
 });

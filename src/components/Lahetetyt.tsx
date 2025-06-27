@@ -97,13 +97,7 @@ const Lahetetyt: React.FC = () => {
       {/* LEFT PANEL */}
       {(!isMobile || (!selectedBooking && !selectedConversationId)) && (
         <div className="w-[410px] border-r border-white/10 flex flex-col">
-          <LahetetytSubTabs
-            active={subtab}
-            setActive={setSubtab}
-            hasUnreadBookings={true}
-            hasUnreadOffers={true}
-            hasUnreadMessages={true}
-          />
+          {/* LahetetytSubTabs removed from here */}
 
           {subtab === 'VARAUSPYYNNÖT' && (
             <SentBookingList
@@ -136,6 +130,16 @@ const Lahetetyt: React.FC = () => {
       {/* RIGHT PANEL */}
       {(!isMobile || selectedBooking || selectedConversationId) && (
         <div className="flex-1 overflow-y-auto">
+          {/* Subtabs only show when a Palvelu is selected */}
+          {(selectedBooking || selectedConversationId) && (
+            <LahetetytSubTabs
+              active={subtab}
+              setActive={setSubtab}
+              hasUnreadBookings={true}
+              hasUnreadOffers={true}
+              hasUnreadMessages={true}
+            />
+          )}
           {isMobile && (selectedBooking || selectedConversationId) && (
             <div className="bg-white/2 px-4 py-3 border-b border-white/10">
               <button
@@ -169,6 +173,11 @@ const Lahetetyt: React.FC = () => {
         prev.map((c) => (c.id === updated?.id ? updated : c))
       )
     }
+    onBack={() => {
+      setSelectedConversation(null);
+      setSelectedConversationId(null);
+      setSelectedBooking(null);
+    }}
   />
 )}
 

@@ -15,7 +15,8 @@ const storage = multer.diskStorage({
     cb(null, uploadPath);
   },
   filename: function (req, file, cb) {
-    const uniqueName = `${Date.now()}-${Math.floor(Math.random() * 1e5)}${path.extname(file.originalname)}`;
+    // Always use lowercase extension
+    const uniqueName = `${Date.now()}-${Math.floor(Math.random() * 1e5)}${path.extname(file.originalname).toLowerCase()}`;
     cb(null, uniqueName);
   },
 });

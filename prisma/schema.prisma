@@ -27,6 +27,7 @@ model User {
   reviewsGiven    Review[]                   @relation("Reviewer")
   bookings        Booking[]
   offers          Offer[]
+  notifications   Notification[]
 }
 
 model Review {
@@ -152,9 +153,22 @@ model Offer {
   userId     String
   date       String                     // Used by frontend for display
   price      Float
+  status     String    @default("pending") // pending, approved, rejected
   createdAt  DateTime   @default(now())
   isRead     Boolean    @default(false)
 
   tarve      Tarve      @relation(fields: [tarveId], references: [id])
   user       User       @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  message   String
+  link      String?
+  createdAt DateTime @default(now())
+  isRead    Boolean  @default(false)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

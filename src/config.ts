@@ -1,30 +1,37 @@
 // Dynamic backend URL configuration
-// When accessed from mobile/other devices, use the computer's IP address
-// When accessed locally, use localhost
+// Handles development (with Vite proxy) and production/mobile environments
 
-const getBackendUrl = (): string => {
-  // Get the current hostname (will be localhost when accessed locally, IP when accessed from mobile)
+const getBackendConfig = () => {
   const hostname = window.location.hostname;
-  const port = '5001';
+  const isDevelopment = hostname === 'localhost' || hostname === '127.0.0.1';
   
-  // If we're on localhost, use localhost for backend
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return `http://localhost:${port}`;
+  if (isDevelopment) {
+    // In development, use Vite's proxy for API calls and localhost for direct connections
+    return {
+      API_BASE_PATH: '', // Empty string allows Vite proxy to handle /api/* requests
+      BACKEND_FULL_URL: 'http://localhost:5001' // For Socket.IO and direct asset access
+    };
+  } else {
+    // In production/mobile, use the full URL for everything
+    const backendUrl = `http://${hostname}:5001`;
+    return {
+      API_BASE_PATH: backendUrl,
+      BACKEND_FULL_URL: backendUrl
+    };
   }
-  
-  // Otherwise, use the same hostname as the frontend (mobile access)
-  return `http://${hostname}:${port}`;
 };
 
-// Use Vite environment variable if set, otherwise fallback to dynamic detection
-export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || getBackendUrl();
+const config = getBackendConfig();
+
+// Use Vite environment variables if set, otherwise use dynamic detection
+export const API_BASE_PATH = import.meta.env.VITE_API_BASE_PATH || config.API_BASE_PATH;
+export const BACKEND_FULL_URL = import.meta.env.VITE_BACKEND_URL || config.BACKEND_FULL_URL;
+
+// Legacy export for backward compatibility (points to full URL for assets)
+export const BACKEND_URL = BACKEND_FULL_URL;
 
 // For debugging
-console.log('🔧 Backend URL configured as:', BACKEND_URL);
+console.log('🔧 API Base Path configured as:', API_BASE_PATH);
+console.log('🔧 Backend Full URL configured as:', BACKEND_FULL_URL);
 console.log('🔧 Current hostname:', window.location.hostname);
 console.log('🔧 Current origin:', window.location.origin);
-console.log('🔧 Current href:', window.location.href);
-console.log('🔧 User agent:', navigator.userAgent);
-
-// For development, you can also manually set the IP if needed
-// export const BACKEND_URL = 'http://172.20.10.2:5001'; // Replace with your computer's IP 

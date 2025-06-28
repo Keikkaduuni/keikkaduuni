@@ -1,8 +1,8 @@
 // src/api/conversations.ts
 import axios from 'axios';
-import { BACKEND_URL } from '../config';
+import { API_BASE_PATH } from '../config';
 
-const BASE_URL = BACKEND_URL + '/api/conversations';
+const BASE_URL = API_BASE_PATH + '/api/conversations';
 
 export const fetchConversations = async (token: string) => {
   const res = await axios.get(BASE_URL, {

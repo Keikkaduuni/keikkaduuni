@@ -10,7 +10,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
 import ListingCard from '../components/ListingCard';
 import { CSSTransition, SwitchTransition } from 'react-transition-group';
-import { BACKEND_URL } from '../config';
+import { API_BASE_PATH } from '../config';
 
 const Home: React.FC = () => {
   const [categories, setCategories] = useState<string[]>([]);
@@ -107,7 +107,7 @@ const Home: React.FC = () => {
 
   const fetchAllListings = async () => {
     try {
-      const palveluRes = await fetch(`${BACKEND_URL}/api/palvelut`);
+      const palveluRes = await fetch(`${API_BASE_PATH}/api/palvelut`);
       if (!palveluRes.ok) throw new Error('Failed to fetch palvelut');
       const palveluJson = await palveluRes.json();
       const palveluItems: any[] = palveluJson.items;
@@ -128,7 +128,7 @@ const Home: React.FC = () => {
         rating: p.rating || null,
       }));
 
-      const tarveRes = await fetch(`${BACKEND_URL}/api/tarpeet`);
+      const tarveRes = await fetch(`${API_BASE_PATH}/api/tarpeet`);
       if (!tarveRes.ok) throw new Error('Failed to fetch tarpeet');
       const tarveItems: any[] = await tarveRes.json();
 
@@ -386,7 +386,7 @@ const Home: React.FC = () => {
           onSubmit={async (formData) => {
             try {
               const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-              const res = await fetch(`${BACKEND_URL}/api/tarpeet`, {
+              const res = await fetch(`${API_BASE_PATH}/api/tarpeet`, {
                 method: 'POST',
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
                 body: formData,
@@ -419,7 +419,7 @@ const Home: React.FC = () => {
           onSubmit={async (formData) => {
             try {
               const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-              const res = await fetch(`${BACKEND_URL}/api/palvelut`, {
+              const res = await fetch(`${API_BASE_PATH}/api/palvelut`, {
                 method: 'POST',
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
                 body: formData,

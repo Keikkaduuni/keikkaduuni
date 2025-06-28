@@ -1,7 +1,7 @@
 import axios from 'axios';
-import { BACKEND_URL } from '../config';
+import { API_BASE_PATH } from '../config';
 
-const BASE_URL = BACKEND_URL + '/api/notifications';
+const BASE_URL = API_BASE_PATH + '/api/notifications';
 
 export const fetchNotifications = async (token: string) => {
   const res = await axios.get(BASE_URL, {
@@ -23,4 +23,4 @@ export const deleteNotification = async (id: string, token: string) => {
     headers: { Authorization: `Bearer ${token}` },
     withCredentials: true,
   });
-}; 
+};
